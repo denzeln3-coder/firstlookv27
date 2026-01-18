@@ -1,282 +1,197 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Trash2, AlertTriangle, Bell, Link2, User } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
 import { createPageUrl } from '../utils';
+import { ArrowLeft, User, Bell, Lock, Palette, HelpCircle, LogOut, ChevronRight, Moon, Sun, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Settings() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [notificationPrefs, setNotificationPrefs] = useState({
-    follows: true,
-    upvotes: true,
-    comments: true,
-    messages: true,
-    connections: true,
-    pitch_reviews: true
-  });
-  const [deletePassword, setDeletePassword] = useState('');
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState({ email: true, push: true, messages: true, updates: false });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: async () => {
-      const userData = await base44.auth.me();
-      if (userData?.notification_preferences) {
-        setNotificationPrefs(userData.notification_preferences);
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUser(user);
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        setProfile(profile);
+      } else {
+        navigate('/Login');
       }
-      return userData;
-    }
-  });
+      setLoading(false);
+    };
+    getUser();
+  }, [navigate]);
 
-  const { data: userPitches = [] } = useQuery({
-    queryKey: ['userPitches', user?.id],
-    queryFn: () => base44.entities.Pitch.filter({ founder_id: user.id }),
-    enabled: !!user
-  });
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/Login');
+  };
 
-  const deleteAccountMutation = useMutation({
-    mutationFn: async () => {
-      // Delete all user's pitches first
-      await Promise.all(userPitches.map(pitch => base44.entities.Pitch.delete(pitch.id)));
-      
-      // Note: Base44 handles user deletion at platform level
-      // This would need to be coordinated with Base44's auth system
-      toast.success('Account deletion initiated');
-      base44.auth.logout(createPageUrl('Home'));
-    },
-    onError: () => {
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      // Delete user data
+      await supabase.from('startups').delete().eq('founder_id', user.id);
+      await supabase.from('profiles').delete().eq('id', user.id);
+      await supabase.auth.signOut();
+      toast.success('Account deleted');
+      navigate('/Login');
+    } catch (err) {
       toast.error('Failed to delete account');
     }
-  });
+    setDeleting(false);
+  };
 
-  const updateNotificationPrefsMutation = useMutation({
-    mutationFn: async (prefs) => {
-      await base44.auth.updateMe({
-        notification_preferences: prefs
-      });
+  const settingsSections = [
+    {
+      title: 'Account',
+      items: [
+        { icon: User, label: 'Edit Profile', onClick: () => navigate(createPageUrl('EditProfile')) },
+        { icon: Lock, label: 'Privacy', onClick: () => toast.info('Coming soon') },
+      ]
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      toast.success('Notification preferences updated');
+    {
+      title: 'Notifications',
+      items: [
+        { icon: Bell, label: 'Email Notifications', toggle: true, value: notifications.email, onChange: (v) => setNotifications(p => ({ ...p, email: v })) },
+        { icon: Bell, label: 'Push Notifications', toggle: true, value: notifications.push, onChange: (v) => setNotifications(p => ({ ...p, push: v })) },
+        { icon: Bell, label: 'Message Notifications', toggle: true, value: notifications.messages, onChange: (v) => setNotifications(p => ({ ...p, messages: v })) },
+      ]
+    },
+    {
+      title: 'Support',
+      items: [
+        { icon: HelpCircle, label: 'Help Center', onClick: () => toast.info('Coming soon') },
+        { icon: HelpCircle, label: 'Contact Support', onClick: () => toast.info('Coming soon') },
+      ]
+    },
+    {
+      title: 'Danger Zone',
+      items: [
+        { icon: Trash2, label: 'Delete Account', onClick: () => setShowDeleteModal(true), danger: true },
+      ]
     }
-  });
+  ];
 
-  const handleNotificationToggle = (key) => {
-    const newPrefs = { ...notificationPrefs, [key]: !notificationPrefs[key] };
-    setNotificationPrefs(newPrefs);
-    updateNotificationPrefsMutation.mutate(newPrefs);
-  };
-
-  const handleDeleteAccount = () => {
-    if (!deletePassword) {
-      toast.error('Please enter your password to confirm');
-      return;
-    }
-    deleteAccountMutation.mutate();
-  };
-
-  if (!user) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-[#09090B] flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-[#FAFAFA] text-[24px] font-bold mb-4">Not Logged In</h2>
-          <button
-            onClick={() => base44.auth.redirectToLogin(createPageUrl('Settings'))}
-            className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-lg hover:brightness-110 transition"
-          >
-            Log In
-          </button>
-        </div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-white/20 border-t-[#6366F1] rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#09090B] pb-20">
+    <div className="min-h-screen bg-black pb-20">
       {/* Header */}
-      <div className="fixed top-0 left-0 right-0 bg-[#09090B] z-20 px-4 py-4 flex items-center justify-between border-b border-[#27272A]">
+      <div className="sticky top-0 z-40 bg-black/95 backdrop-blur-lg border-b border-white/10">
+        <div className="px-4 py-4 flex items-center gap-3">
+          <button onClick={() => navigate(createPageUrl('Profile'))} className="text-gray-400 hover:text-white">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-white font-semibold text-lg">Settings</h1>
+        </div>
+      </div>
+
+      {/* User Info */}
+      <div className="p-4 border-b border-white/10">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-white text-2xl font-bold">{(profile?.display_name || user?.email || 'U')[0].toUpperCase()}</span>
+            )}
+          </div>
+          <div>
+            <h2 className="text-white font-semibold text-lg">{profile?.display_name || 'User'}</h2>
+            <p className="text-gray-500 text-sm">{user?.email}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Settings Sections */}
+      <div className="p-4 space-y-6">
+        {settingsSections.map((section, idx) => (
+          <div key={idx}>
+            <h3 className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2 px-2">{section.title}</h3>
+            <div className="bg-[#1C1C1E] rounded-xl overflow-hidden">
+              {section.items.map((item, itemIdx) => {
+                const Icon = item.icon;
+                return (
+                  <div key={itemIdx}>
+                    {item.toggle ? (
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Icon className="w-5 h-5 text-gray-400" />
+                          <span className="text-white">{item.label}</span>
+                        </div>
+                        <button
+                          onClick={() => item.onChange(!item.value)}
+                          className={`w-12 h-7 rounded-full transition ${item.value ? 'bg-[#6366F1]' : 'bg-gray-600'}`}
+                        >
+                          <div className={`w-5 h-5 rounded-full bg-white shadow transition transform ${item.value ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={item.onClick}
+                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition ${item.danger ? 'text-red-500' : 'text-white'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className={`w-5 h-5 ${item.danger ? 'text-red-500' : 'text-gray-400'}`} />
+                          <span>{item.label}</span>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-gray-600" />
+                      </button>
+                    )}
+                    {itemIdx < section.items.length - 1 && <div className="h-px bg-white/10 ml-12" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Logout Button */}
         <button
-          onClick={() => navigate(createPageUrl('Profile'))}
-          className="text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors duration-150"
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-[#1C1C1E] text-red-500 rounded-xl hover:bg-white/5 transition"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <LogOut className="w-5 h-5" />
+          <span className="font-medium">Log Out</span>
         </button>
-        <h1 className="text-[#FAFAFA] text-[20px] font-bold">Settings</h1>
-        <div className="w-5" />
+
+        {/* Version */}
+        <p className="text-center text-gray-600 text-sm">FirstLook v1.0.0</p>
       </div>
 
-      {/* Content */}
-      <div className="pt-20 px-6">
-        {/* Quick Actions */}
-        <div className="mb-8">
-          <h2 className="text-[#FAFAFA] text-[18px] font-semibold mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <button
-              onClick={() => navigate(createPageUrl('EditProfile'))}
-              className="w-full p-4 bg-[#18181B] border border-[#27272A] rounded-xl hover:border-[#3A3A3C] transition flex items-center gap-4"
-            >
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center">
-                <User className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-left flex-1">
-                <h3 className="text-[#FAFAFA] font-medium">Edit Profile</h3>
-                <p className="text-[#A1A1AA] text-[12px]">Update your personal information</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => navigate(createPageUrl('IntegrationSettings'))}
-              className="w-full p-4 bg-[#18181B] border border-[#27272A] rounded-xl hover:border-[#3A3A3C] transition flex items-center gap-4"
-            >
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#8B5CF6] to-[#A855F7] flex items-center justify-center">
-                <Link2 className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-left flex-1">
-                <h3 className="text-[#FAFAFA] font-medium">Integrations</h3>
-                <p className="text-[#A1A1AA] text-[12px]">Connect CRM, Calendar & more</p>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Account Section */}
-        <div className="mb-8">
-          <h2 className="text-[#FAFAFA] text-[18px] font-semibold mb-4">Account</h2>
-          <div className="bg-[#18181B] rounded-xl border border-[#27272A] overflow-hidden">
-            <div className="p-4 border-b border-[#27272A]">
-              <div className="text-[#A1A1AA] text-[12px] uppercase tracking-wide font-medium mb-1">Email</div>
-              <div className="text-[#FAFAFA] text-[14px]">{user.email}</div>
-            </div>
-            <div className="p-4 border-b border-[#27272A]">
-              <div className="text-[#A1A1AA] text-[12px] uppercase tracking-wide font-medium mb-1">Account Type</div>
-              <div className="text-[#FAFAFA] text-[14px] capitalize">{user.role}</div>
-            </div>
-            <div className="p-4">
-              <div className="text-[#A1A1AA] text-[12px] uppercase tracking-wide font-medium mb-2">User Type</div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[#FAFAFA] text-[14px] capitalize">
-                  {user.user_type || 'Not set'}
-                </span>
-                {user.is_investor && (
-                  <span className="px-2 py-1 bg-[#22C55E]/20 text-[#22C55E] text-xs font-bold rounded">
-                    INVESTOR
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => navigate(createPageUrl('UserTypeSettings'))}
-                className="text-[#6366F1] text-xs hover:underline"
-              >
-                Change user type →
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Notifications Section */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Bell className="w-5 h-5 text-[#FAFAFA]" />
-            <h2 className="text-[#FAFAFA] text-[18px] font-semibold">Notifications</h2>
-          </div>
-          <div className="bg-[#18181B] rounded-xl border border-[#27272A] divide-y divide-[#27272A]">
-            {[
-              { key: 'follows', label: 'New Followers', desc: 'When someone follows you' },
-              { key: 'upvotes', label: 'Upvotes', desc: 'When someone upvotes your pitch' },
-              { key: 'comments', label: 'Comments', desc: 'When someone comments on your pitch' },
-              { key: 'messages', label: 'Messages', desc: 'When you receive a new message' },
-              { key: 'connections', label: 'Connections', desc: 'Connection requests and acceptances' },
-              { key: 'pitch_reviews', label: 'Pitch Reviews', desc: 'Updates on your pitch review status' }
-            ].map(({ key, label, desc }) => (
-              <div key={key} className="p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-[#FAFAFA] text-[14px] font-medium mb-1">{label}</div>
-                  <div className="text-[#A1A1AA] text-[12px]">{desc}</div>
-                </div>
-                <button
-                  onClick={() => handleNotificationToggle(key)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${
-                    notificationPrefs[key] ? 'bg-[#6366F1]' : 'bg-[#3A3A3C]'
-                  }`}
-                >
-                  <div className={`absolute w-5 h-5 bg-white rounded-full top-0.5 transition-transform ${
-                    notificationPrefs[key] ? 'translate-x-6' : 'translate-x-0.5'
-                  }`} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Danger Zone */}
-        <div className="mb-8">
-          <h2 className="text-[#EF4444] text-[18px] font-semibold mb-4">Danger Zone</h2>
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6">
-            <div className="flex items-start gap-3 mb-4">
-              <AlertTriangle className="w-5 h-5 text-[#EF4444] mt-0.5" />
-              <div>
-                <h3 className="text-[#FAFAFA] text-[16px] font-semibold mb-1">Delete Account</h3>
-                <p className="text-[#A1A1AA] text-[14px] leading-[1.6]">
-                  This will permanently delete your account and all {userPitches.length} of your pitches. This action cannot be undone.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="w-full px-4 py-3 bg-[#EF4444] text-white text-[14px] font-semibold rounded-lg hover:brightness-110 transition-all duration-150"
-            >
-              <Trash2 className="w-4 h-4 inline mr-2" />
-              Delete My Account
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#18181B] rounded-2xl p-6 max-w-md w-full border border-[#27272A]">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-                <AlertTriangle className="w-6 h-6 text-[#EF4444]" />
-              </div>
-              <h3 className="text-[#FAFAFA] text-[20px] font-bold">Confirm Account Deletion</h3>
-            </div>
-            <p className="text-[#A1A1AA] text-[14px] leading-[1.6] mb-6">
-              Are you absolutely sure? This will permanently delete your account, all {userPitches.length} pitches, and all associated data. This action cannot be undone.
-            </p>
-            <div className="mb-6">
-              <label className="block text-[#FAFAFA] text-[14px] font-medium mb-2">
-                Enter your password to confirm
-              </label>
-              <input
-                type="password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="Password"
-                className="w-full px-4 py-3 bg-[#09090B] text-[#FAFAFA] border border-[#27272A] rounded-lg focus:outline-none focus:border-[#EF4444] placeholder:text-[#71717A]"
-                autoFocus
-              />
-            </div>
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-[#1C1C1E] rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-white text-xl font-bold mb-2">Delete Account?</h2>
+            <p className="text-gray-400 mb-6">This action cannot be undone. All your data, pitches, and connections will be permanently deleted.</p>
             <div className="flex gap-3">
               <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setDeletePassword('');
-                }}
-                className="flex-1 px-4 py-3 bg-[#27272A] text-[#FAFAFA] text-[14px] font-semibold rounded-lg hover:brightness-110 transition-all duration-150"
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 py-3 bg-[#2C2C2E] text-white rounded-xl font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteAccount}
-                disabled={!deletePassword}
-                className="flex-1 px-4 py-3 bg-[#EF4444] text-white text-[14px] font-semibold rounded-lg hover:brightness-110 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={deleting}
+                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50"
               >
-                Delete Forever
+                {deleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

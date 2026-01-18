@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, MoreVertical, Settings, Share2, LogOut, Grid3x3, Bookmark, Play, CheckCircle2, Globe, MessageCircle, BarChart3, Briefcase, Users, Trash2, MoreHorizontal, Send, ArrowUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -27,7 +27,7 @@ export default function Profile() {
     queryKey: ['currentUser'],
     queryFn: async () => {
       try {
-        return await base44.auth.me();
+        return (await supabase.auth.getUser()).data.user;
       } catch {
         return null;
       }
@@ -40,7 +40,7 @@ export default function Profile() {
     queryFn: async () => {
       if (!profileUserId) return currentUser;
       try {
-        const users = await base44.entities.User.filter({ id: profileUserId });
+        const users = (await supabase.from('profiles').select('*').eq('id', profileUserId)).data;
         return users[0] || null;
       } catch {
         return null;
@@ -70,7 +70,7 @@ export default function Profile() {
 
   const { data: userPitches = [], isLoading: pitchesLoading } = useQuery({
     queryKey: ['userPitches', profileUser?.id],
-    queryFn: () => base44.entities.Pitch.filter({ founder_id: profileUser.id }, '-created_date'),
+    queryFn: () => supabase.from('startups').select('*').eq('founder_id', profileUser.id).order('created_at', { ascending: false }).then(r => r.data || []),
     enabled: !!profileUser,
     staleTime: 2 * 60 * 1000
   });
@@ -79,10 +79,10 @@ export default function Profile() {
     queryKey: ['savedPitches', currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const bookmarks = await base44.entities.Bookmark.filter({ user_id: currentUser.id });
+      const bookmarks = (await supabase.from('bookmarks').select('*').eq('user_id', currentUser.id)).data || [];
       const pitchIds = bookmarks.map(b => b.pitch_id);
       if (pitchIds.length === 0) return [];
-      const allPitches = await base44.entities.Pitch.list();
+      const allPitches = (await supabase.from('startups').select('*')).data || [];
       return allPitches.filter(p => pitchIds.includes(p.id));
     },
     enabled: isOwnProfile && !!currentUser
@@ -92,10 +92,10 @@ export default function Profile() {
     queryKey: ['upvotedPitches', currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const upvotes = await base44.entities.Upvote.filter({ user_id: currentUser.id });
+      const upvotes = (await supabase.from('upvotes').select('*').eq('user_id', currentUser.id)).data || [];
       const pitchIds = upvotes.map(u => u.pitch_id);
       if (pitchIds.length === 0) return [];
-      const allPitches = await base44.entities.Pitch.list();
+      const allPitches = (await supabase.from('startups').select('*')).data || [];
       return allPitches.filter(p => pitchIds.includes(p.id));
     },
     enabled: isOwnProfile && !!currentUser && activeTab === 'saved'
@@ -105,10 +105,8 @@ export default function Profile() {
     queryKey: ['isFollowing', currentUser?.id, profileUser?.id],
     queryFn: async () => {
       if (!currentUser || !profileUser || isOwnProfile) return false;
-      const follows = await base44.entities.Follow.filter({ 
-        follower_id: currentUser.id, 
-        following_id: profileUser.id 
-      });
+      const follows = (await supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', profileUser.id 
+      )).data || [];
       return follows.length > 0;
     },
     enabled: !!currentUser && !!profileUser && !isOwnProfile
@@ -116,7 +114,7 @@ export default function Profile() {
 
   const { data: teamMembers = [] } = useQuery({
     queryKey: ['teamMembers', profileUser?.id],
-    queryFn: () => base44.entities.UserTeamMember.filter({ user_id: profileUser.id }, 'order'),
+    queryFn: () => supabase.from('user_team_members').select('*').eq('user_id', profileUser.id).order('order').then(r => r.data || []),
     enabled: !!profileUser
   });
 
@@ -124,7 +122,7 @@ export default function Profile() {
     queryKey: ['followers', profileUser?.id],
     queryFn: async () => {
       if (!profileUser) return [];
-      const follows = await base44.entities.Follow.filter({ following_id: profileUser.id });
+      const follows = (await supabase.from('follows').select('*').eq('following_id', profileUser.id)).data || [];
       return follows.slice(0, 6);
     },
     enabled: !!profileUser
@@ -134,7 +132,7 @@ export default function Profile() {
     queryKey: ['following', profileUser?.id],
     queryFn: async () => {
       if (!profileUser) return [];
-      const follows = await base44.entities.Follow.filter({ follower_id: profileUser.id });
+      const follows = (await supabase.from('follows').select('*').eq('follower_id', profileUser.id)).data || [];
       return follows.slice(0, 6);
     },
     enabled: !!profileUser
@@ -142,13 +140,13 @@ export default function Profile() {
 
   const { data: allViews = [] } = useQuery({
     queryKey: ['pitchViews'],
-    queryFn: () => base44.entities.PitchView.list(),
+    queryFn: () => supabase.from('pitch_views').select('*').then(r => r.data || []),
     enabled: !!profileUser
   });
 
   const { data: allUsers = [] } = useQuery({
     queryKey: ['allUsers'],
-    queryFn: () => base44.entities.User.list(),
+    queryFn: () => supabase.from('profiles').select('*').then(r => r.data || []),
     enabled: !isOwnProfile && (followers.length > 0 || following.length > 0)
   });
 
@@ -156,7 +154,7 @@ export default function Profile() {
     queryKey: ['pinnedPitches', profileUser?.id],
     queryFn: async () => {
       if (!profileUser) return [];
-      const pitches = await base44.entities.Pitch.filter({ founder_id: profileUser.id, is_pinned: true });
+      const pitches = (await supabase.from('startups').select('*').eq('founder_id', profileUser.id).eq('is_pinned', true)).data || [];
       return pitches;
     },
     enabled: !!profileUser
@@ -182,7 +180,7 @@ export default function Profile() {
       const pitch = userPitches.find(p => p.id === pitchId);
       if (!pitch) return;
 
-      await base44.entities.Pitch.update(pitchId, {
+      await supabase.from('startups').update({
         is_pinned: !pitch.is_pinned
       });
     },
@@ -195,27 +193,27 @@ export default function Profile() {
 
   const deletePitchMutation = useMutation({
     mutationFn: async (pitchId) => {
-      const upvotes = await base44.entities.Upvote.filter({ pitch_id: pitchId });
+      const upvotes = (await supabase.from('upvotes').select('*').eq('startup_id', pitchId)).data || [];
       for (const upvote of upvotes) {
-        await base44.entities.Upvote.delete(upvote.id);
+        await supabase.from('upvotes').delete().eq('id', upvote.id);
       }
       
-      const comments = await base44.entities.Comment.filter({ pitch_id: pitchId });
+      const comments = (await supabase.from('comments').select('*').eq('startup_id', pitchId)).data || [];
       for (const comment of comments) {
-        await base44.entities.Comment.delete(comment.id);
+        await supabase.from('comments').delete().eq('id', comment.id);
       }
       
-      const bookmarks = await base44.entities.Bookmark.filter({ pitch_id: pitchId });
+      const bookmarks = (await supabase.from('bookmarks').select('*').eq('startup_id', pitchId)).data || [];
       for (const bookmark of bookmarks) {
-        await base44.entities.Bookmark.delete(bookmark.id);
+        await supabase.from('bookmarks').delete().eq('id', bookmark.id);
       }
       
-      const views = await base44.entities.PitchView.filter({ pitch_id: pitchId });
+      const views = (await supabase.from('pitch_views').select('*').eq('startup_id', pitchId)).data || [];
       for (const view of views) {
-        await base44.entities.PitchView.delete(view.id);
+        await supabase.from('pitch_views').delete().eq('id', view.id);
       }
       
-      await base44.entities.Pitch.delete(pitchId);
+      await supabase.from('startups').delete().eq('id', pitchId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['userPitches'] });
@@ -233,40 +231,32 @@ export default function Profile() {
     mutationFn: async () => {
       if (!currentUser || !profileUser) return;
       
-      const existingFollow = await base44.entities.Follow.filter({
-        follower_id: currentUser.id,
-        following_id: profileUser.id
-      });
+      const existingFollow = (await supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', profileUser.id
+      )).data || [];
 
       if (existingFollow.length > 0) {
-        await base44.entities.Follow.delete(existingFollow[0].id);
-        await base44.entities.User.update(currentUser.id, {
+        await supabase.from('follows').delete().eq('id', existingFollow[0].id);
+        await supabase.from('profiles').update( {
           following_count: Math.max(0, (currentUser.following_count || 0) - 1)
         });
-        await base44.entities.User.update(profileUser.id, {
+        await supabase.from('profiles').update( {
           followers_count: Math.max(0, (profileUser.followers_count || 0) - 1)
         });
         toast.success('Unfollowed');
       } else {
-        await base44.entities.Follow.create({
+        await supabase.from('follows').insert({
           follower_id: currentUser.id,
           following_id: profileUser.id
         });
-        await base44.entities.User.update(currentUser.id, {
+        await supabase.from('profiles').update( {
           following_count: (currentUser.following_count || 0) + 1
         });
-        await base44.entities.User.update(profileUser.id, {
+        await supabase.from('profiles').update( {
           followers_count: (profileUser.followers_count || 0) + 1
         });
         
         // Create notification
-        await base44.functions.invoke('createNotification', {
-          userId: profileUser.id,
-          type: 'follow',
-          fromUserId: currentUser.id,
-          message: `${currentUser.display_name || currentUser.username || 'Someone'} started following you`,
-          actionUrl: `/Profile?userId=${currentUser.id}`
-        });
+        /* notification disabled */ null;
         
         toast.success('Following');
       }
@@ -285,7 +275,7 @@ export default function Profile() {
   }), [userPitches, profileUser]);
 
   const handleLogout = () => {
-    base44.auth.logout(createPageUrl('Explore'));
+    supabase.auth.signOut().then(() => window.location.href = '/Explore');
   };
 
   const handleShareProfile = () => {
@@ -327,7 +317,7 @@ export default function Profile() {
         <div className="text-center">
           <h2 className="text-[#FAFAFA] text-[24px] font-bold mb-4">Not Logged In</h2>
           <button
-            onClick={() => base44.auth.redirectToLogin(createPageUrl('Profile'))}
+            onClick={() => window.location.href = '/login'}
             className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-lg hover:brightness-110 transition"
           >
             Log In

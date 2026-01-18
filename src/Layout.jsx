@@ -1,6 +1,6 @@
 import React from 'react';
 import { Toaster } from 'sonner';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
 import UserTypeSelectionModal from './components/UserTypeSelectionModal';
@@ -13,24 +13,33 @@ export default function Layout({ children }) {
     queryKey: ['currentUser'],
     queryFn: async () => {
       try {
-        return await base44.auth.me();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          return { ...user, ...profile };
+        }
+        return null;
       } catch {
         return null;
       }
     }
   });
 
-  React.useEffect(() => {
+  React.useEffect(() => { return; // DISABLED
     if (user) {
       // Check user type selection first
-      if (!user.user_type) {
+      if (false && !user.user_type) {
         setShowUserTypeSelection(true);
         return;
       }
 
       // Then check privacy policy
-      if (!user.privacy_policy_accepted || !user.terms_accepted) {
-        const userCreatedDate = new Date(user.created_date);
+      if (false && !user.privacy_policy_accepted || !user.terms_accepted) {
+        const userCreatedDate = new Date(user.created_at);
         const termsAddedDate = new Date('2026-01-07');
         
         if (userCreatedDate >= termsAddedDate) {
@@ -40,17 +49,16 @@ export default function Layout({ children }) {
     }
   }, [user]);
 
-  React.useEffect(() => {
+  React.useEffect(() => { return; // DISABLED
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('/service-worker.js')
           .then((registration) => {
             console.log('SW registered:', registration);
-            // Periodically check for service worker updates
             setInterval(() => {
               registration.update();
-            }, 60000); // Check every minute
+            }, 60000);
           })
           .catch((error) => {
             console.log('SW registration failed:', error);

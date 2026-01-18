@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '../lib/supabase';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Rocket, DollarSign, Search } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,12 +10,23 @@ export default function UserTypeSelectionModal({ onComplete }) {
 
   const updateUserTypeMutation = useMutation({
     mutationFn: async (userType) => {
-      await base44.auth.updateMe({ user_type: userType });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ user_type: userType })
+        .eq('id', user.id);
+      
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
       toast.success('Welcome to FirstLook!');
       onComplete();
+    },
+    onError: (error) => {
+      toast.error('Failed to save: ' + error.message);
     }
   });
 
@@ -56,7 +67,7 @@ export default function UserTypeSelectionModal({ onComplete }) {
       <div className="bg-[#18181B] rounded-2xl p-8 max-w-md w-full border border-[#27272A]">
         <h2 className="text-white text-2xl font-bold text-center mb-2">Welcome to FirstLook!</h2>
         <p className="text-[#A1A1AA] text-center mb-6">How will you use FirstLook?</p>
-
+        
         <div className="space-y-3 mb-6">
           {userTypes.map((type) => {
             const Icon = type.icon;

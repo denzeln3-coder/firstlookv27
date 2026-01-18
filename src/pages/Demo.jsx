@@ -1,5 +1,5 @@
 import React from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, MessageCircle, ArrowUp, Calendar, Tag, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +15,8 @@ export default function Demo() {
     queryKey: ['currentUser'],
     queryFn: async () => {
       try {
-        return await base44.auth.me();
+        const { data: { user } } = await supabase.auth.getUser();
+        return user;
       } catch {
         return null;
       }
@@ -25,17 +26,13 @@ export default function Demo() {
   const { data: pitch, isLoading: pitchLoading } = useQuery({
     queryKey: ['pitch', pitchId],
     queryFn: async () => {
-      const allPitches = await base44.entities.Pitch.list();
-      return allPitches.find(p => p.id === pitchId);
-    },
-    enabled: !!pitchId
-  });
-
-  const { data: demo, isLoading: demoLoading } = useQuery({
-    queryKey: ['demo', pitchId],
-    queryFn: async () => {
-      const allDemos = await base44.entities.Demo.list();
-      return allDemos.find(d => d.pitch_id === pitchId);
+      const { data, error } = await supabase
+        .from('startups')
+        .select('*')
+        .eq('id', pitchId)
+        .single();
+      if (error) return null;
+      return data;
     },
     enabled: !!pitchId
   });
@@ -43,8 +40,13 @@ export default function Demo() {
   const { data: founder } = useQuery({
     queryKey: ['founder', pitch?.founder_id],
     queryFn: async () => {
-      const users = await base44.entities.User.list();
-      return users.find(u => u.id === pitch.founder_id);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', pitch.founder_id)
+        .single();
+      if (error) return null;
+      return data;
     },
     enabled: !!pitch?.founder_id
   });
@@ -53,8 +55,12 @@ export default function Demo() {
     queryKey: ['upvote', pitchId, user?.id],
     queryFn: async () => {
       if (!user) return false;
-      const upvotes = await base44.entities.Upvote.filter({ user_id: user.id, pitch_id: pitchId });
-      return upvotes.length > 0;
+      const { data, error } = await supabase
+        .from('upvotes')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('startup_id', pitchId);
+      return data && data.length > 0;
     },
     enabled: !!user && !!pitchId
   });
@@ -62,17 +68,25 @@ export default function Demo() {
   const upvoteMutation = useMutation({
     mutationFn: async () => {
       if (!user) return;
-      const upvotes = await base44.entities.Upvote.filter({ user_id: user.id, pitch_id: pitchId });
-      if (upvotes.length > 0) {
-        await base44.entities.Upvote.delete(upvotes[0].id);
-        await base44.entities.Pitch.update(pitchId, {
-          upvote_count: Math.max(0, (pitch.upvote_count || 0) - 1)
-        });
+      
+      const { data: existing } = await supabase
+        .from('upvotes')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('startup_id', pitchId);
+
+      if (existing && existing.length > 0) {
+        await supabase.from('upvotes').delete().eq('id', existing[0].id);
+        await supabase
+          .from('startups')
+          .update({ upvote_count: Math.max(0, (pitch.upvote_count || 0) - 1) })
+          .eq('id', pitchId);
       } else {
-        await base44.entities.Upvote.create({ user_id: user.id, pitch_id: pitchId });
-        await base44.entities.Pitch.update(pitchId, {
-          upvote_count: (pitch.upvote_count || 0) + 1
-        });
+        await supabase.from('upvotes').insert({ user_id: user.id, startup_id: pitchId });
+        await supabase
+          .from('startups')
+          .update({ upvote_count: (pitch.upvote_count || 0) + 1 })
+          .eq('id', pitchId);
       }
     },
     onSuccess: () => {
@@ -81,9 +95,7 @@ export default function Demo() {
     }
   });
 
-  const isLoading = pitchLoading || demoLoading;
-
-  if (isLoading) {
+  if (pitchLoading) {
     return (
       <div className="min-h-screen bg-[#000000] flex items-center justify-center">
         <div className="skeleton w-32 h-8 rounded-xl" />
@@ -127,6 +139,9 @@ export default function Demo() {
     return `${Math.floor(seconds / 604800)}w ago`;
   };
 
+  // Use demo_url if available, otherwise fall back to video_url
+  const videoToPlay = pitch.demo_url || pitch.video_url;
+
   return (
     <div className="min-h-screen bg-[#000000] pb-20">
       <div className="sticky top-0 bg-[#000000]/95 backdrop-blur-lg z-20 border-b border-[rgba(255,255,255,0.06)]">
@@ -144,29 +159,37 @@ export default function Demo() {
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Video Player */}
         <div className="aspect-video bg-black rounded-2xl overflow-hidden mb-6 border border-[rgba(255,255,255,0.06)]">
-          {demo?.video_url ? (
+          {videoToPlay ? (
             <video
-              src={demo.video_url}
+              src={videoToPlay}
               controls
               autoPlay
               className="w-full h-full"
               poster={pitch.thumbnail_url}
             />
-          ) : pitch.video_url ? (
-            <video
-              src={pitch.video_url}
-              controls
-              className="w-full h-full"
-              poster={pitch.thumbnail_url}
-            />
-          ) : (
+          ) : pitch.thumbnail_url ? (
             <img
               src={pitch.thumbnail_url}
-              alt={pitch.startup_name}
+              alt={pitch.startup_name || pitch.name}
               className="w-full h-full object-cover"
             />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
+              <span className="text-white text-4xl font-bold">
+                {(pitch.startup_name || pitch.name)?.[0]?.toUpperCase() || '?'}
+              </span>
+            </div>
           )}
         </div>
+
+        {/* No Demo Notice */}
+        {!pitch.demo_url && pitch.video_url && (
+          <div className="mb-6 p-4 bg-[#6366F1]/10 border border-[#6366F1]/20 rounded-xl">
+            <p className="text-[#8E8E93] text-sm">
+              <span className="text-[#6366F1] font-semibold">Note:</span> This startup hasn't uploaded a demo yet. You're watching their 15-second pitch.
+            </p>
+          </div>
+        )}
 
         {/* Header with Logo and Upvote */}
         <div className="flex items-start justify-between mb-4">
@@ -177,7 +200,7 @@ export default function Demo() {
               </div>
             )}
             <div>
-              <h1 className="text-white text-2xl font-bold">{pitch.startup_name}</h1>
+              <h1 className="text-white text-2xl font-bold">{pitch.startup_name || pitch.name}</h1>
             </div>
           </div>
           <button
@@ -195,7 +218,7 @@ export default function Demo() {
 
         {/* One-liner */}
         <p className="text-[#8E8E93] text-base leading-relaxed mb-6">
-          {pitch.one_liner}
+          {pitch.one_liner || pitch.tagline}
         </p>
 
         {/* Metadata */}
@@ -208,15 +231,15 @@ export default function Demo() {
           )}
           <div className="flex items-center gap-2 text-[#8E8E93]">
             <Calendar className="w-4 h-4" />
-            <span>Posted {getTimeSince(pitch.created_date)}</span>
+            <span>Posted {getTimeSince(pitch.created_at)}</span>
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex gap-3 mb-8">
-          {(demo?.product_url || pitch.product_url) && (
+          {pitch.product_url && (
             <a
-              href={demo?.product_url || pitch.product_url}
+              href={pitch.product_url}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-xl hover:bg-gray-100 transition"
@@ -244,7 +267,7 @@ export default function Demo() {
         <div className="bg-[#0A0A0A] border border-[rgba(255,255,255,0.06)] rounded-2xl p-6 mb-6">
           <h2 className="text-white text-lg font-bold mb-4">ABOUT THIS DEMO</h2>
           <p className="text-[#8E8E93] text-sm leading-relaxed">
-            {pitch.what_problem_do_you_solve || 'This demo showcases the product in action. Watch to see how it works and what problems it solves.'}
+            {pitch.description || 'This demo showcases the product in action. Watch to see how it works and what problems it solves.'}
           </p>
         </div>
 
@@ -265,10 +288,7 @@ export default function Demo() {
                   )}
                 </div>
                 <div>
-                  <div className="text-white font-semibold">{founder.display_name || founder.full_name || 'Founder'}</div>
-                  {founder.username && (
-                    <div className="text-[#8E8E93] text-sm">@{founder.username.replace('@', '')}</div>
-                  )}
+                  <div className="text-white font-semibold">{founder.full_name || founder.email || 'Founder'}</div>
                 </div>
               </button>
               {user && founder.id !== user.id && (

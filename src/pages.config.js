@@ -26,6 +26,7 @@ import InvestorFeedback from './pages/InvestorFeedback';
 import InvestorMatches from './pages/InvestorMatches';
 import InvestorProfile from './pages/InvestorProfile';
 import Leaderboard from './pages/Leaderboard';
+import Login from './pages/Login';
 import MVPPage from './pages/MVPPage';
 import ManageTeam from './pages/ManageTeam';
 import Messages from './pages/Messages';
@@ -43,8 +44,9 @@ import Test from './pages/Test';
 import ThumbnailSelector from './pages/ThumbnailSelector';
 import UserTypeSettings from './pages/UserTypeSettings';
 import VideoEditor from './pages/VideoEditor';
+import Community from './pages/Community';
+import ChannelDetail from './pages/ChannelDetail';
 import __Layout from './Layout.jsx';
-
 
 export const PAGES = {
     "AdminEducators": AdminEducators,
@@ -75,6 +77,7 @@ export const PAGES = {
     "InvestorMatches": InvestorMatches,
     "InvestorProfile": InvestorProfile,
     "Leaderboard": Leaderboard,
+    "Login": Login,
     "MVPPage": MVPPage,
     "ManageTeam": ManageTeam,
     "Messages": Messages,
@@ -92,6 +95,8 @@ export const PAGES = {
     "ThumbnailSelector": ThumbnailSelector,
     "UserTypeSettings": UserTypeSettings,
     "VideoEditor": VideoEditor,
+    "Community": Community,
+    "ChannelDetail": ChannelDetail,
 }
 
 export const pagesConfig = {
