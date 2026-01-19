@@ -39,7 +39,7 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
     width: { ideal: 1080, min: 720 },
     height: { ideal: 1920, min: 1280 },
     aspectRatio: { ideal: 9/16 },
-    frameRate: { ideal: 30, min: 24 }
+    frameRate: { ideal: 60, min: 30 }
   });
 
   const getAudioConstraints = () => ({
@@ -139,15 +139,15 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
       chunksRef.current = [];
       
       let mimeType = 'video/webm;codecs=vp9,opus';
-      let options = { mimeType, videoBitsPerSecond: 4000000, audioBitsPerSecond: 128000 };
+      let options = { mimeType, videoBitsPerSecond: 10000000, audioBitsPerSecond: 192000 };
       
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'video/webm;codecs=vp8,opus';
-        options = { mimeType, videoBitsPerSecond: 4000000, audioBitsPerSecond: 128000 };
+        options = { mimeType, videoBitsPerSecond: 10000000, audioBitsPerSecond: 192000 };
       }
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'video/webm';
-        options = { mimeType, videoBitsPerSecond: 4000000, audioBitsPerSecond: 128000 };
+        options = { mimeType, videoBitsPerSecond: 10000000, audioBitsPerSecond: 192000 };
       }
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'video/mp4';

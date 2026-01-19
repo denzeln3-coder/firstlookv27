@@ -1,10 +1,19 @@
-import React, { useState, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useRef, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Camera, Upload, X, Plus, Trash2, User, Briefcase, Building2, Users as UsersIcon, Award, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, Camera, Upload, X, Plus, Trash2, User, Briefcase, Building2, Users as Users, Award, Link as LinkIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { toast } from 'sonner';
+
+const COLLAB_OPTIONS = [
+  { id: 'cofounder', label: '👥 Looking for Co-founder' },
+  { id: 'designer', label: '🎨 Need a Designer' },
+  { id: 'developer', label: '💻 Need a Developer' },
+  { id: 'feedback', label: '💬 Want Feedback' },
+  { id: 'advisor', label: '🧠 Seeking Advisor' },
+  { id: 'investor', label: '💰 Raising Funds' },
+];
 
 export default function EditProfile() {
   const navigate = useNavigate();
@@ -15,26 +24,62 @@ export default function EditProfile() {
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
+    queryFn: async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+      
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      
+      return { ...authUser, ...profile };
+    }
   });
 
   const [formData, setFormData] = useState({
-    display_name: user?.display_name || '',
-    username: user?.username?.replace('@', '') || '',
-    bio: user?.bio || '',
-    website_url: user?.website_url || '',
-    twitter_url: user?.twitter_url || '',
-    linkedin_url: user?.linkedin_url || '',
-    rockz_url: user?.rockz_url || '',
-    avatar_url: user?.avatar_url || '',
-    company_logo: user?.company_logo || '',
-    company_name: user?.company_name || '',
-    company_about: user?.company_about || '',
-    company_website: user?.company_website || '',
-    company_twitter: user?.company_twitter || '',
-    company_linkedin: user?.company_linkedin || '',
-    previous_startups: user?.previous_startups || []
+    display_name: '',
+    username: '',
+    bio: '',
+    website_url: '',
+    twitter_url: '',
+    linkedin_url: '',
+    rockz_url: '',
+    avatar_url: '',
+    company_logo: '',
+    company_name: '',
+    company_about: '',
+    company_website: '',
+    company_twitter: '',
+    company_linkedin: '',
+    previous_startups: [],
+    collab_modes: []
   });
+
+  // Populate form when user data loads
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        display_name: user.display_name || '',
+        username: user.username?.replace('@', '') || '',
+        bio: user.bio || '',
+        website_url: user.website_url || '',
+        twitter_url: user.twitter_url || '',
+        linkedin_url: user.linkedin_url || '',
+        rockz_url: user.rockz_url || '',
+        avatar_url: user.avatar_url || '',
+        company_logo: user.company_logo || '',
+        company_name: user.company_name || '',
+        company_about: user.company_about || '',
+        company_website: user.company_website || '',
+        company_twitter: user.company_twitter || '',
+        company_linkedin: user.company_linkedin || '',
+        previous_startups: user.previous_startups || [],
+        collab_modes: user.collab_modes || []
+      });
+    }
+  }, [user]);
 
   const [newStartup, setNewStartup] = useState({ name: '', role: '', year: '', outcome: '' });
   const [newTeamMember, setNewTeamMember] = useState({ name: '', role: '', bio: '', photo_url: '', linkedin_url: '', twitter_url: '' });
@@ -44,7 +89,12 @@ export default function EditProfile() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data) => {
-      await base44.auth.updateMe(data);
+      const { error } = await supabase
+        .from('users')
+        .update(data)
+        .eq('id', user.id);
+      
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
@@ -56,14 +106,32 @@ export default function EditProfile() {
     }
   });
 
+  const uploadFile = async (file, bucket = 'avatars') => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  };
+
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploading(true);
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      setFormData({ ...formData, avatar_url: result.file_url });
+      const publicUrl = await uploadFile(file, 'avatars');
+      setFormData({ ...formData, avatar_url: publicUrl });
       toast.success('Avatar uploaded!');
     } catch (error) {
       toast.error('Failed to upload avatar');
@@ -78,8 +146,8 @@ export default function EditProfile() {
 
     setUploadingLogo(true);
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      setFormData({ ...formData, company_logo: result.file_url });
+      const publicUrl = await uploadFile(file, 'logos');
+      setFormData({ ...formData, company_logo: publicUrl });
       toast.success('Logo uploaded!');
     } catch (error) {
       toast.error('Failed to upload logo');
@@ -94,8 +162,8 @@ export default function EditProfile() {
 
     setUploadingTeamPhoto(true);
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
-      setNewTeamMember({ ...newTeamMember, photo_url: result.file_url });
+      const publicUrl = await uploadFile(file, 'team-photos');
+      setNewTeamMember({ ...newTeamMember, photo_url: publicUrl });
       toast.success('Photo uploaded!');
     } catch (error) {
       toast.error('Failed to upload photo');
@@ -106,16 +174,31 @@ export default function EditProfile() {
 
   const { data: teamMembers = [] } = useQuery({
     queryKey: ['teamMembers', user?.id],
-    queryFn: () => base44.entities.UserTeamMember.filter({ user_id: user.id }, 'order'),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_team_members')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('order', { ascending: true });
+      
+      if (error) throw error;
+      return data || [];
+    },
     enabled: !!user
   });
 
   const addTeamMemberMutation = useMutation({
-    mutationFn: (member) => base44.entities.UserTeamMember.create({
-      ...member,
-      user_id: user.id,
-      order: teamMembers.length
-    }),
+    mutationFn: async (member) => {
+      const { error } = await supabase
+        .from('user_team_members')
+        .insert({
+          ...member,
+          user_id: user.id,
+          order: teamMembers.length
+        });
+      
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teamMembers'] });
       setNewTeamMember({ name: '', role: '', bio: '', photo_url: '', linkedin_url: '', twitter_url: '' });
@@ -124,7 +207,14 @@ export default function EditProfile() {
   });
 
   const deleteTeamMemberMutation = useMutation({
-    mutationFn: (memberId) => base44.entities.UserTeamMember.delete(memberId),
+    mutationFn: async (memberId) => {
+      const { error } = await supabase
+        .from('user_team_members')
+        .delete()
+        .eq('id', memberId);
+      
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teamMembers'] });
       toast.success('Team member removed');
@@ -144,6 +234,15 @@ export default function EditProfile() {
     updateProfileMutation.mutate({ ...formData, username });
   };
 
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}${createPageUrl('Profile')}`
+      }
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#000000] flex items-center justify-center">
@@ -158,7 +257,7 @@ export default function EditProfile() {
         <div className="text-center">
           <h2 className="text-white text-[24px] font-bold mb-4">Not Logged In</h2>
           <button
-            onClick={() => base44.auth.redirectToLogin(createPageUrl('Profile'))}
+            onClick={handleLogin}
             className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition"
           >
             Log In
@@ -301,6 +400,47 @@ export default function EditProfile() {
             </div>
           </section>
 
+          {/* Collab Mode */}
+          <section>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-[#22C55E]/10 flex items-center justify-center">
+                <Users className="w-5 h-5 text-[#22C55E]" />
+              </div>
+              <div>
+                <h2 className="text-white text-[20px] font-bold">Collab Mode</h2>
+                <p className="text-[#8E8E93] text-[13px]">Let others know what you are looking for</p>
+              </div>
+            </div>
+            
+            <div className="bg-[#0A0A0A] border border-[#18181B] rounded-2xl p-6">
+              <div className="flex flex-wrap gap-3">
+                {COLLAB_OPTIONS.map(option => {
+                  const isSelected = formData.collab_modes?.includes(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        const current = formData.collab_modes || [];
+                        const updated = isSelected
+                          ? current.filter(id => id !== option.id)
+                          : [...current, option.id];
+                        setFormData({ ...formData, collab_modes: updated });
+                      }}
+                      className={`px-4 py-2.5 rounded-xl text-[14px] font-medium transition ${
+                        isSelected
+                          ? "bg-[#6366F1] text-white"
+                          : "bg-[#18181B] text-[#A1A1AA] hover:bg-[#27272A]"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
           {/* Company Details */}
           <section>
             <div className="flex items-center gap-3 mb-6">
@@ -394,7 +534,7 @@ export default function EditProfile() {
           <section>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-[#22C55E]/10 flex items-center justify-center">
-                <UsersIcon className="w-5 h-5 text-[#22C55E]" />
+                <Users className="w-5 h-5 text-[#22C55E]" />
               </div>
               <h2 className="text-white text-[20px] font-bold">Team Members</h2>
             </div>

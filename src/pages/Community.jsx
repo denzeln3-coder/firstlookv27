@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, Users, MapPin, Calendar, Plus, MessageCircle, ChevronRight, Search, Video, Clock, X, Hash } from 'lucide-react';
+import { ArrowLeft, Users, MapPin, Calendar, Plus, MessageCircle, ChevronRight, Search, Video, Clock, X, Hash, Check, ExternalLink, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CHANNEL_ICONS = ['💬', '🚀', '💡', '🎯', '🔥', '⚡', '🌟', '💎', '🎨', '🛠️', '📱', '🤖', '💰', '📈', '🎮', '🏥', '🌍', '📚'];
@@ -13,6 +13,15 @@ const CHANNEL_CATEGORIES = [
   'Climate', 'Education', 'Gaming', 'Hardware', 'Marketplace', 'Developer Tools', 'Other'
 ];
 
+const COLLAB_OPTIONS = [
+  { id: 'cofounder', label: '👥 Looking for Co-founder', color: 'from-purple-500/20 to-pink-500/20' },
+  { id: 'designer', label: '🎨 Need a Designer', color: 'from-blue-500/20 to-cyan-500/20' },
+  { id: 'developer', label: '💻 Need a Developer', color: 'from-green-500/20 to-emerald-500/20' },
+  { id: 'feedback', label: '💬 Want Feedback', color: 'from-yellow-500/20 to-orange-500/20' },
+  { id: 'advisor', label: '🧠 Seeking Advisor', color: 'from-indigo-500/20 to-violet-500/20' },
+  { id: 'investor', label: '💰 Raising Funds', color: 'from-rose-500/20 to-red-500/20' },
+];
+
 export default function Community() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -20,13 +29,15 @@ export default function Community() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateMeetup, setShowCreateMeetup] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [selectedMeetup, setSelectedMeetup] = useState(null);
+  const [collabFilter, setCollabFilter] = useState(null);
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
         return { ...user, ...profile };
       }
       return null;
@@ -59,23 +70,36 @@ export default function Community() {
     }
   });
 
+  const { data: userRSVPs = [] } = useQuery({
+    queryKey: ['userRSVPs', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data } = await supabase.from('meetup_attendees').select('meetup_id, status').eq('user_id', user.id);
+      return data || [];
+    },
+    enabled: !!user
+  });
+
   const { data: meetupHosts = [] } = useQuery({
     queryKey: ['meetupHosts', meetups.map(m => m.host_id)],
     queryFn: async () => {
       if (meetups.length === 0) return [];
       const hostIds = [...new Set(meetups.map(m => m.host_id))];
-      const { data } = await supabase.from('profiles').select('*').in('id', hostIds);
+      const { data } = await supabase.from('users').select('*').in('id', hostIds);
       return data || [];
     },
     enabled: meetups.length > 0
   });
 
   const { data: founders = [], isLoading: foundersLoading } = useQuery({
-    queryKey: ['founders', searchQuery],
+    queryKey: ['founders', searchQuery, collabFilter],
     queryFn: async () => {
-      let query = supabase.from('profiles').select('*').eq('is_visible_in_directory', true).limit(50);
+      let query = supabase.from('users').select('*').limit(50);
       if (searchQuery) {
         query = query.or(`display_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,city.ilike.%${searchQuery}%`);
+      }
+      if (collabFilter) {
+        query = query.contains('collab_modes', [collabFilter]);
       }
       const { data } = await query;
       return data || [];
@@ -89,13 +113,38 @@ export default function Community() {
       const isJoined = userChannels.includes(channelId);
       if (isJoined) {
         await supabase.from('channel_members').delete().eq('channel_id', channelId).eq('user_id', user.id);
+        await supabase.from('channels').update({ member_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', channelId);
       } else {
         await supabase.from('channel_members').insert({ channel_id: channelId, user_id: user.id });
+        await supabase.from('channels').update({ member_count: supabase.rpc('increment', { x: 1 }) }).eq('id', channelId);
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['userChannels'] });
       queryClient.invalidateQueries({ queryKey: ['channels'] });
+    }
+  });
+
+  const rsvpMutation = useMutation({
+    mutationFn: async ({ meetupId, action }) => {
+      if (!user) throw new Error('Must be logged in');
+      const existingRSVP = userRSVPs.find(r => r.meetup_id === meetupId);
+      
+      if (action === 'cancel' && existingRSVP) {
+        await supabase.from('meetup_attendees').delete().eq('meetup_id', meetupId).eq('user_id', user.id);
+        await supabase.from('meetups').update({ attendee_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', meetupId);
+      } else if (action === 'going' && !existingRSVP) {
+        await supabase.from('meetup_attendees').insert({ meetup_id: meetupId, user_id: user.id, status: 'going' });
+        await supabase.from('meetups').update({ attendee_count: supabase.rpc('increment', { x: 1 }) }).eq('id', meetupId);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userRSVPs'] });
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
+      toast.success('RSVP updated!');
+    },
+    onError: () => {
+      toast.error('Failed to update RSVP');
     }
   });
 
@@ -105,10 +154,21 @@ export default function Community() {
     joinChannelMutation.mutate(channelId);
   };
 
+  const handleRSVP = (meetupId, action) => {
+    if (!user) { navigate('/Login'); return; }
+    rsvpMutation.mutate({ meetupId, action });
+  };
+
   const filteredChannels = channels.filter(c => 
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     c.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.category?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredMeetups = meetups.filter(m =>
+    m.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.city?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.location?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -140,7 +200,6 @@ export default function Community() {
       <div className="pt-44 px-4">
         {activeTab === 'channels' && (
           <div className="space-y-3">
-            {/* Create Channel Button */}
             {user && (
               <button 
                 onClick={() => setShowCreateChannel(true)} 
@@ -193,13 +252,20 @@ export default function Community() {
         {activeTab === 'meetups' && (
           <div className="space-y-4">
             {user && <button onClick={() => setShowCreateMeetup(true)} className="w-full p-4 bg-gradient-to-r from-[#6366F1]/20 to-[#8B5CF6]/20 border border-[#6366F1]/40 rounded-xl flex items-center justify-center gap-2 text-[#6366F1] font-semibold hover:from-[#6366F1]/30 hover:to-[#8B5CF6]/30 transition"><Plus className="w-5 h-5" />Create a Meetup</button>}
-            {meetupsLoading ? [...Array(4)].map((_, i) => <div key={i} className="h-32 bg-[#1C1C1E] rounded-xl animate-pulse" />) : meetups.length === 0 ? (
+            {meetupsLoading ? [...Array(4)].map((_, i) => <div key={i} className="h-32 bg-[#1C1C1E] rounded-xl animate-pulse" />) : filteredMeetups.length === 0 ? (
               <div className="text-center py-12"><Calendar className="w-12 h-12 text-[#636366] mx-auto mb-3" /><p className="text-[#8E8E93] mb-2">No upcoming meetups</p><p className="text-[#636366] text-[13px]">Be the first to create one!</p></div>
-            ) : meetups.map(meetup => {
+            ) : filteredMeetups.map(meetup => {
               const host = meetupHosts.find(h => h.id === meetup.host_id);
               const eventDate = new Date(meetup.event_date);
+              const userRSVP = userRSVPs.find(r => r.meetup_id === meetup.id);
+              const isGoing = userRSVP?.status === 'going';
+              
               return (
-                <div key={meetup.id} className="w-full bg-[#1C1C1E] border border-[rgba(255,255,255,0.06)] rounded-xl p-4">
+                <div 
+                  key={meetup.id} 
+                  onClick={() => setSelectedMeetup({ ...meetup, host })}
+                  className="w-full bg-[#1C1C1E] border border-[rgba(255,255,255,0.06)] rounded-xl p-4 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition"
+                >
                   <div className="flex gap-4">
                     <div className="w-14 h-14 rounded-xl bg-[#6366F1]/20 flex flex-col items-center justify-center flex-shrink-0">
                       <span className="text-[#6366F1] text-[10px] font-bold uppercase">{eventDate.toLocaleDateString('en-US', { month: 'short' })}</span>
@@ -216,10 +282,17 @@ export default function Community() {
                           {host?.avatar_url ? <img src={host.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-white text-[10px] font-bold">{(host?.display_name || 'H')?.[0]}</span>}
                         </div>
                         <span className="text-[#636366] text-[11px]">Hosted by {host?.display_name || 'Unknown'}</span>
-                        <span className="text-[#636366] text-[11px]">• {meetup.attendee_count}/{meetup.max_attendees} going</span>
+                        <span className="text-[#636366] text-[11px]">• {meetup.attendee_count || 0}/{meetup.max_attendees} going</span>
                       </div>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-[#636366] self-center" />
+                    <div className="flex flex-col items-end gap-2">
+                      {isGoing && (
+                        <span className="px-2 py-1 bg-green-500/20 text-green-400 text-[11px] font-semibold rounded-lg flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Going
+                        </span>
+                      )}
+                      <ChevronRight className="w-5 h-5 text-[#636366]" />
+                    </div>
                   </div>
                 </div>
               );
@@ -228,7 +301,30 @@ export default function Community() {
         )}
 
         {activeTab === 'founders' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Collab Mode Filters */}
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+              <button
+                onClick={() => setCollabFilter(null)}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap transition ${
+                  !collabFilter ? 'bg-[#6366F1] text-white' : 'bg-[#1C1C1E] text-[#8E8E93] hover:bg-[#27272A]'
+                }`}
+              >
+                All Founders
+              </button>
+              {COLLAB_OPTIONS.map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => setCollabFilter(collabFilter === option.id ? null : option.id)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap transition ${
+                    collabFilter === option.id ? 'bg-[#6366F1] text-white' : 'bg-[#1C1C1E] text-[#8E8E93] hover:bg-[#27272A]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
             {foundersLoading ? [...Array(6)].map((_, i) => <div key={i} className="h-20 bg-[#1C1C1E] rounded-xl animate-pulse" />) : founders.length === 0 ? (
               <div className="text-center py-12"><Users className="w-12 h-12 text-[#636366] mx-auto mb-3" /><p className="text-[#8E8E93]">No founders found</p></div>
             ) : founders.map(founder => (
@@ -241,6 +337,23 @@ export default function Community() {
                     <h3 className="text-white font-semibold text-[15px]">{founder.display_name || founder.full_name || 'Founder'}</h3>
                     {founder.username && <p className="text-[#8E8E93] text-[13px]">@{founder.username}</p>}
                     {(founder.city || founder.company_name) && <div className="flex items-center gap-2 mt-1 text-[#636366] text-[12px]">{founder.city && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{founder.city}</span>}{founder.company_name && <span>• {founder.company_name}</span>}</div>}
+                    {founder.collab_modes && founder.collab_modes.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {founder.collab_modes.slice(0, 2).map(mode => {
+                          const option = COLLAB_OPTIONS.find(o => o.id === mode);
+                          return option ? (
+                            <span key={mode} className="px-2 py-0.5 bg-[#6366F1]/20 text-[#6366F1] text-[10px] rounded-full">
+                              {option.label}
+                            </span>
+                          ) : null;
+                        })}
+                        {founder.collab_modes.length > 2 && (
+                          <span className="px-2 py-0.5 bg-white/10 text-gray-400 text-[10px] rounded-full">
+                            +{founder.collab_modes.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <ChevronRight className="w-5 h-5 text-[#636366]" />
                 </div>
@@ -253,6 +366,155 @@ export default function Community() {
       {showCreateMeetup && <CreateMeetupModal user={user} onClose={() => setShowCreateMeetup(false)} onSuccess={() => { setShowCreateMeetup(false); queryClient.invalidateQueries({ queryKey: ['meetups'] }); toast.success('Meetup created!'); }} />}
       
       {showCreateChannel && <CreateChannelModal user={user} onClose={() => setShowCreateChannel(false)} onSuccess={() => { setShowCreateChannel(false); queryClient.invalidateQueries({ queryKey: ['channels'] }); toast.success('Channel created!'); }} />}
+
+      {selectedMeetup && (
+        <MeetupDetailModal 
+          meetup={selectedMeetup} 
+          user={user}
+          isGoing={userRSVPs.find(r => r.meetup_id === selectedMeetup.id)?.status === 'going'}
+          onClose={() => setSelectedMeetup(null)} 
+          onRSVP={handleRSVP}
+          isPending={rsvpMutation.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }) {
+  const eventDate = new Date(meetup.event_date);
+  const isFull = meetup.attendee_count >= meetup.max_attendees;
+  const isHost = user?.id === meetup.host_id;
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      await navigator.share({
+        title: meetup.title,
+        text: `Join me at ${meetup.title}!`,
+        url: window.location.href
+      });
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast.success('Link copied!');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-[#18181B] rounded-t-3xl sm:rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-6">
+          <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-4 sm:hidden" />
+          
+          {/* Header */}
+          <div className="flex items-start justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#6366F1]/30 to-[#8B5CF6]/30 flex flex-col items-center justify-center">
+                <span className="text-[#6366F1] text-[11px] font-bold uppercase">{eventDate.toLocaleDateString('en-US', { month: 'short' })}</span>
+                <span className="text-white text-[24px] font-bold leading-none">{eventDate.getDate()}</span>
+              </div>
+              <div>
+                <h2 className="text-white text-[20px] font-bold">{meetup.title}</h2>
+                <p className="text-[#8E8E93] text-[14px] mt-1">
+                  {eventDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition">
+              <X className="w-5 h-5 text-[#8E8E93]" />
+            </button>
+          </div>
+
+          {/* Details */}
+          <div className="space-y-4 mb-6">
+            <div className="flex items-center gap-3 text-[#FAFAFA]">
+              <Clock className="w-5 h-5 text-[#6366F1]" />
+              <span>{eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+            </div>
+            
+            <div className="flex items-center gap-3 text-[#FAFAFA]">
+              {meetup.is_virtual ? <Video className="w-5 h-5 text-[#6366F1]" /> : <MapPin className="w-5 h-5 text-[#6366F1]" />}
+              <span>{meetup.is_virtual ? 'Virtual Event' : `${meetup.location}${meetup.city ? `, ${meetup.city}` : ''}`}</span>
+            </div>
+
+            <div className="flex items-center gap-3 text-[#FAFAFA]">
+              <Users className="w-5 h-5 text-[#6366F1]" />
+              <span>{meetup.attendee_count || 0} / {meetup.max_attendees} attending</span>
+              {isFull && <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[11px] rounded">FULL</span>}
+            </div>
+          </div>
+
+          {/* Host */}
+          <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl mb-6">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden">
+              {meetup.host?.avatar_url ? (
+                <img src={meetup.host.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-white text-[14px] font-bold">{(meetup.host?.display_name || 'H')?.[0]}</span>
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-[#8E8E93] text-[12px]">Hosted by</p>
+              <p className="text-white font-semibold">{meetup.host?.display_name || 'Unknown'}</p>
+            </div>
+          </div>
+
+          {/* Description */}
+          {meetup.description && (
+            <div className="mb-6">
+              <h3 className="text-white font-semibold mb-2">About</h3>
+              <p className="text-[#A1A1AA] text-[14px] leading-relaxed">{meetup.description}</p>
+            </div>
+          )}
+
+          {/* Meeting Link (if virtual and user is going) */}
+          {meetup.is_virtual && meetup.meeting_link && isGoing && (
+            <a 
+              href={meetup.meeting_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 p-3 bg-[#6366F1]/20 border border-[#6366F1]/40 rounded-xl text-[#6366F1] mb-6 hover:bg-[#6366F1]/30 transition"
+            >
+              <ExternalLink className="w-5 h-5" />
+              <span className="font-medium">Join Meeting</span>
+            </a>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button 
+              onClick={handleShare}
+              className="p-3 bg-[#27272A] rounded-xl hover:bg-[#3F3F46] transition"
+            >
+              <Share2 className="w-5 h-5 text-white" />
+            </button>
+            
+            {isHost ? (
+              <button 
+                disabled
+                className="flex-1 py-3 bg-[#27272A] text-[#8E8E93] font-semibold rounded-xl"
+              >
+                You're hosting
+              </button>
+            ) : isGoing ? (
+              <button 
+                onClick={() => onRSVP(meetup.id, 'cancel')}
+                disabled={isPending}
+                className="flex-1 py-3 bg-[#27272A] text-white font-semibold rounded-xl hover:bg-[#3F3F46] transition disabled:opacity-50"
+              >
+                {isPending ? 'Updating...' : 'Cancel RSVP'}
+              </button>
+            ) : (
+              <button 
+                onClick={() => onRSVP(meetup.id, 'going')}
+                disabled={isPending || isFull}
+                className="flex-1 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50"
+              >
+                {isPending ? 'Updating...' : isFull ? 'Event Full' : "I'm Going"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -290,7 +552,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
       
       if (error) throw error;
       
-      // Auto-join the channel creator
       const { data: newChannel } = await supabase
         .from('channels')
         .select('id')
@@ -323,7 +584,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
           <p className="text-gray-400 text-sm mt-1">Build a community around a topic</p>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Icon Picker */}
           <div>
             <label className="block text-[#8E8E93] text-[13px] mb-2">Icon</label>
             <div className="relative">
@@ -351,7 +611,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
             </div>
           </div>
 
-          {/* Name */}
           <div>
             <label className="block text-[#8E8E93] text-[13px] mb-2">Channel Name *</label>
             <input 
@@ -364,7 +623,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
             />
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-[#8E8E93] text-[13px] mb-2">Description</label>
             <textarea 
@@ -376,7 +634,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
             />
           </div>
 
-          {/* Category */}
           <div>
             <label className="block text-[#8E8E93] text-[13px] mb-2">Category</label>
             <select
@@ -391,7 +648,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
             </select>
           </div>
 
-          {/* Private toggle */}
           <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
             <input 
               type="checkbox" 
@@ -405,7 +661,6 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
             </div>
           </div>
 
-          {/* Buttons */}
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="flex-1 py-3 bg-[#27272A] text-white font-semibold rounded-xl hover:bg-[#3F3F46] transition">Cancel</button>
             <button type="submit" disabled={isSubmitting || !formData.name.trim()} className="flex-1 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50">{isSubmitting ? 'Creating...' : 'Create Channel'}</button>

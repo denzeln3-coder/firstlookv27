@@ -28,7 +28,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         await supabase.from('pitch_views').insert({
-          pitch_id: pitch.id,
+          startup_id: pitch.id,
           user_id: user?.id || null,
           watch_time_seconds: 0,
           completed: false
@@ -48,11 +48,11 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       if (watchTime > 1) {
         supabase.auth.getUser().then(({ data: { user } }) => {
           supabase.from('pitch_views').insert({
-            pitch_id: pitch.id,
+            startup_id: pitch.id,
             user_id: user?.id || null,
             watch_time_seconds: watchTime,
             completed: watchTime >= 15
-          }).catch(() => {});
+          });
         });
       }
     };
@@ -90,7 +90,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     queryKey: ['upvote', pitch.id, user?.id],
     queryFn: async () => {
       if (!user) return false;
-      const { data } = await supabase.from('upvotes').select('*').eq('user_id', user.id).eq('pitch_id', pitch.id);
+      const { data } = await supabase.from('upvotes').select('*').eq('user_id', user.id).eq('startup_id', pitch.id);
       return (data || []).length > 0;
     },
     enabled: !!user
@@ -100,7 +100,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     queryKey: ['bookmark', pitch.id, user?.id],
     queryFn: async () => {
       if (!user) return false;
-      const { data } = await supabase.from('bookmarks').select('*').eq('user_id', user.id).eq('pitch_id', pitch.id);
+      const { data } = await supabase.from('bookmarks').select('*').eq('user_id', user.id).eq('startup_id', pitch.id);
       return (data || []).length > 0;
     },
     enabled: !!user
@@ -109,7 +109,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
   const { data: comments = [] } = useQuery({
     queryKey: ['comments', pitch.id],
     queryFn: async () => {
-      const { data } = await supabase.from('comments').select('*').eq('pitch_id', pitch.id).order('created_at', { ascending: false });
+      const { data } = await supabase.from('comments').select('*').eq('startup_id', pitch.id).order('created_at', { ascending: false });
       return data || [];
     }
   });
@@ -148,13 +148,13 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     mutationFn: async () => {
       if (!user) return;
       
-      const { data: upvotes } = await supabase.from('upvotes').select('*').eq('user_id', user.id).eq('pitch_id', pitch.id);
+      const { data: upvotes } = await supabase.from('upvotes').select('*').eq('user_id', user.id).eq('startup_id', pitch.id);
       
       if (upvotes && upvotes.length > 0) {
         await supabase.from('upvotes').delete().eq('id', upvotes[0].id);
         await supabase.from('startups').update({ upvote_count: Math.max(0, (pitch.upvote_count || 0) - 1) }).eq('id', pitch.id);
       } else {
-        await supabase.from('upvotes').insert({ user_id: user.id, pitch_id: pitch.id });
+        await supabase.from('upvotes').insert({ user_id: user.id, startup_id: pitch.id });
         await supabase.from('startups').update({ upvote_count: (pitch.upvote_count || 0) + 1 }).eq('id', pitch.id);
       }
     },
@@ -168,13 +168,13 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     mutationFn: async () => {
       if (!user) return;
       
-      const { data: bookmarks } = await supabase.from('bookmarks').select('*').eq('user_id', user.id).eq('pitch_id', pitch.id);
+      const { data: bookmarks } = await supabase.from('bookmarks').select('*').eq('user_id', user.id).eq('startup_id', pitch.id);
       
       if (bookmarks && bookmarks.length > 0) {
         await supabase.from('bookmarks').delete().eq('id', bookmarks[0].id);
         toast.success('Removed from bookmarks');
       } else {
-        await supabase.from('bookmarks').insert({ user_id: user.id, pitch_id: pitch.id });
+        await supabase.from('bookmarks').insert({ user_id: user.id, startup_id: pitch.id });
         toast.success('Added to bookmarks');
       }
     },
@@ -212,9 +212,9 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     
     try {
       await supabase.from('comments').insert({
-        pitch_id: pitch.id,
+        startup_id: pitch.id,
         user_id: user.id,
-        text: commentText.trim()
+        content: commentText.trim()
       });
       
       queryClient.invalidateQueries({ queryKey: ['comments', pitch.id] });
@@ -283,7 +283,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
         await supabase.from('intro_requests').insert({
           investor_id: user.id,
           founder_id: pitch.founder_id,
-          pitch_id: pitch.id,
+          startup_id: pitch.id,
           message: message || ''
         });
         toast.success('Intro request sent!');
@@ -293,7 +293,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
 
     await supabase.from('investor_actions').insert({
       investor_id: user.id,
-      pitch_id: pitch.id,
+      startup_id: pitch.id,
       action_type: actionType
     });
 
@@ -309,7 +309,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
   const handlePass = async () => {
     await supabase.from('investor_actions').insert({
       investor_id: user.id,
-      pitch_id: pitch.id,
+      startup_id: pitch.id,
       action_type: 'passed',
       feedback: passFeedback || null
     });
@@ -489,7 +489,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       {showInfoCard && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowInfoCard(false)}>
           <div 
-            className="absolute bottom-0 left-0 right-0 bg-[#18181B] rounded-t-3xl p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[70vh] overflow-y-auto"
+            className="absolute bottom-20 left-0 right-0 bg-[#18181B] rounded-t-3xl p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[60vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-6" />
@@ -637,7 +637,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       {/* Comments Modal */}
       {showComments && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-[60]" onClick={() => setShowComments(false)}>
-          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] flex flex-col border-t border-[rgba(255,255,255,0.1)]" style={{ maxHeight: '70vh' }} onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] flex flex-col border-t border-[rgba(255,255,255,0.1)]" style={{ maxHeight: '60vh', marginBottom: '80px' }} onClick={(e) => e.stopPropagation()}>
             <div className="p-6 border-b border-[rgba(255,255,255,0.1)]">
               <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-4" />
               <h3 className="text-white text-xl font-bold">{comments.length} Comments</h3>
@@ -660,7 +660,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
                       </div>
                       <div className="flex-1">
                         <div className="text-white font-semibold text-sm mb-1">{commenter?.display_name || commenter?.full_name || 'User'}</div>
-                        <div className="text-[#A1A1AA] text-sm">{comment.text}</div>
+                        <div className="text-[#A1A1AA] text-sm">{comment.content}</div>
                       </div>
                     </div>
                   );

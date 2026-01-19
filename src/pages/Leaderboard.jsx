@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Trophy, TrendingUp, Calendar, Play } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -12,16 +12,26 @@ export default function Leaderboard() {
   const { data: allPitches = [], isLoading } = useQuery({
     queryKey: ['pitches'],
     queryFn: async () => {
-      const pitches = await base44.entities.Pitch.list('-upvote_count');
-      return pitches.filter(p => p.is_published === true || !p.review_status);
+      const { data, error } = await supabase
+        .from('pitches')
+        .select('*')
+        .or('is_published.eq.true,review_status.is.null')
+        .order('upvote_count', { ascending: false });
+      
+      if (error) return [];
+      return data;
     }
   });
 
   const { data: founderData = {} } = useQuery({
     queryKey: ['leaderboardFounders'],
     queryFn: async () => {
-      const users = await base44.entities.User.list();
-      return users.reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
+      const { data, error } = await supabase
+        .from('users')
+        .select('*');
+      
+      if (error) return {};
+      return data.reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
     }
   });
 

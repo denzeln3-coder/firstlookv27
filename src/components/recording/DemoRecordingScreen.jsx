@@ -58,7 +58,7 @@ export default function DemoRecordingScreen({ recordingType = 'video', onComplet
             facingMode: 'environment', 
             width: { ideal: 1920 }, 
             height: { ideal: 1080 },
-            frameRate: { ideal: 30 }
+            frameRate: { ideal: 60 }
           },
           audio: {
             echoCancellation: true,
@@ -95,7 +95,7 @@ export default function DemoRecordingScreen({ recordingType = 'video', onComplet
             video: { 
               width: { ideal: 1920 },
               height: { ideal: 1080 },
-              frameRate: { ideal: 30 }
+              frameRate: { ideal: 60 }
             },
             audio: {
               echoCancellation: true,
@@ -160,16 +160,16 @@ export default function DemoRecordingScreen({ recordingType = 'video', onComplet
       let mimeType = 'video/webm;codecs=vp9';
       let options = { 
         mimeType, 
-        videoBitsPerSecond: 2500000,
-        audioBitsPerSecond: 128000
+        videoBitsPerSecond: 10000000,
+        audioBitsPerSecond: 192000
       };
       
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'video/webm;codecs=vp8';
         options = { 
           mimeType, 
-          videoBitsPerSecond: 2500000,
-          audioBitsPerSecond: 128000
+          videoBitsPerSecond: 10000000,
+          audioBitsPerSecond: 192000
         };
       }
       
@@ -177,8 +177,8 @@ export default function DemoRecordingScreen({ recordingType = 'video', onComplet
         mimeType = 'video/webm';
         options = { 
           mimeType,
-          videoBitsPerSecond: 2500000,
-          audioBitsPerSecond: 128000
+          videoBitsPerSecond: 10000000,
+          audioBitsPerSecond: 192000
         };
       }
       

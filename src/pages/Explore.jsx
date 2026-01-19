@@ -66,6 +66,9 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
   const hasVideo = !!(pitch.video_url && pitch.video_url.trim());
   const hasThumbnail = !!(pitch.thumbnail_url && pitch.thumbnail_url.trim());
   const shouldLoad = hasVideo && canPrefetch && (inView || index < prefetchCount);
+  
+  // Get display name
+  const displayName = pitch.startup_name || pitch.name || 'Untitled';
 
   useEffect(() => {
     const el = containerRef.current;
@@ -113,48 +116,54 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
       ref={containerRef}
       data-pitch-id={pitch.id}
       onClick={onClick}
-      className="relative overflow-hidden rounded-lg bg-[#18181B]"
-      style={{ aspectRatio: '4/5', width: '100%' }}
+      className="relative overflow-hidden rounded-sm bg-[#18181B] transition-all duration-200 hover:scale-[1.02] hover:brightness-110 hover:z-10 w-full"
     >
-      {hasThumbnail ? (
-        <img
-          src={pitch.thumbnail_url}
-          alt={pitch.startup_name || pitch.name}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
-        />
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
-          <span className="text-white text-[32px] font-bold">
-            {(pitch.startup_name || pitch.name)?.[0]?.toUpperCase() || '?'}
-          </span>
-        </div>
-      )}
+      {/* Fixed aspect ratio container */}
+      <div className="relative w-full" style={{ paddingBottom: '125%' }}>
+        {/* Thumbnail or fallback */}
+        {hasThumbnail ? (
+          <img
+            src={pitch.thumbnail_url}
+            alt={displayName}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
+            <span className="text-white text-[28px] font-bold">
+              {displayName[0]?.toUpperCase() || '?'}
+            </span>
+          </div>
+        )}
 
-      {hasVideo && (
-        <video
-          ref={videoRef}
-          src={shouldLoad ? pitch.video_url : undefined}
-          poster={hasThumbnail ? pitch.thumbnail_url : undefined}
-          loop
-          muted
-          playsInline
-          preload={index < prefetchCount ? 'metadata' : 'none'}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
-          onLoadedMetadata={() => setVideoReady(true)}
-          onError={handleVideoError}
-        />
-      )}
+        {/* Video layer */}
+        {hasVideo && (
+          <video
+            ref={videoRef}
+            src={shouldLoad ? pitch.video_url : undefined}
+            poster={hasThumbnail ? pitch.thumbnail_url : undefined}
+            loop
+            muted
+            playsInline
+            preload={index < prefetchCount ? 'metadata' : 'none'}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
+            onLoadedMetadata={() => setVideoReady(true)}
+            onError={handleVideoError}
+          />
+        )}
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+        {/* Gradient scrim */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
 
-      <div className="absolute bottom-0 left-0 right-0 p-2 z-10">
-        <p className="text-white text-[11px] font-semibold truncate mb-1" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
-          {pitch.startup_name || pitch.name}
-        </p>
-        <div className="flex items-center gap-1">
-          <Play className="w-3 h-3 text-white fill-white" />
-          <span className="text-white/90 text-[10px] font-medium">{pitch.upvote_count || 0}</span>
+        {/* Text overlay - always visible */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+          <p className="text-white text-[13px] font-semibold truncate mb-1 drop-shadow-lg">
+            {displayName}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <Play className="w-3 h-3 text-white/80 fill-white/80" />
+            <span className="text-white/70 text-[11px] font-medium">{pitch.upvote_count || 0}</span>
+          </div>
         </div>
       </div>
     </button>
@@ -328,8 +337,10 @@ export default function Explore() {
 
   const filteredPitches = useMemo(() => {
     let list = pitches;
+    
     if (selectedCategory !== 'all') list = list.filter((p) => p.category === selectedCategory);
     if (selectedStage !== 'all') list = list.filter((p) => p.product_stage === selectedStage);
+    
     const term = debouncedSearchTerm.trim().toLowerCase();
     if (term) {
       list = list.filter((p) => {
@@ -337,8 +348,35 @@ export default function Explore() {
                (p.one_liner || '').toLowerCase().includes(term);
       });
     }
+    
+    // Sort based on sortBy tab
+    switch (sortBy) {
+      case 'newest':
+        list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        break;
+      case 'top':
+        list = [...list].sort((a, b) => (b.upvote_count || 0) - (a.upvote_count || 0));
+        break;
+      case 'following':
+        if (user && followingList && followingList.length > 0) {
+          const followingIds = followingList.map(f => f.following_id);
+          list = list.filter((p) => followingIds.includes(p.founder_id));
+        } else {
+          list = [];
+        }
+        break;
+      case 'trending':
+      default:
+        list = [...list].sort((a, b) => {
+          const aScore = (a.upvote_count || 0) + (new Date(a.created_at).getTime() / 100000000000);
+          const bScore = (b.upvote_count || 0) + (new Date(b.created_at).getTime() / 100000000000);
+          return bScore - aScore;
+        });
+        break;
+    }
+    
     return list;
-  }, [pitches, selectedCategory, selectedStage, debouncedSearchTerm]);
+  }, [pitches, selectedCategory, selectedStage, debouncedSearchTerm, sortBy, user, followingList]);
 
   const handlePitchClick = (pitch) => setSelectedPitch(pitch);
 
@@ -359,22 +397,20 @@ export default function Explore() {
 
   return (
     <div className="min-h-screen bg-[#000000] w-full pb-20">
+      {/* Header */}
       <div className="fixed top-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg z-20 border-b border-[rgba(255,255,255,0.06)]">
-        <div className="px-4 py-4 flex items-center justify-between">
-          <div className="flex flex-col">
-            <h1 className="brand-title text-[26px]">
-              <span className="text-white">First</span>
-              <span className="highlight">Look</span>
-            </h1>
-            <span className="text-[10px] text-[#636366] tracking-wide -mt-1">15-second pitches. Zero fluff.</span>
-          </div>
+        <div className="px-4 py-3 flex items-center justify-between">
+          <h1 className="text-[22px] font-bold">
+            <span className="text-white">First</span>
+            <span className="text-[#8B5CF6]">Look</span>
+          </h1>
 
-          <div className="flex items-center gap-2 lg:gap-3">
-            <button onClick={() => setShowSearch(!showSearch)} className="w-9 h-9 rounded-full bg-[rgba(255,255,255,0.06)] flex items-center justify-center text-[#8E8E93] hover:text-[#FFFFFF] hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowSearch(!showSearch)} className="btn-icon">
               <Search className="w-4 h-4" />
             </button>
 
-            <button onClick={() => setShowFilters(!showFilters)} className="w-9 h-9 rounded-full bg-[rgba(255,255,255,0.06)] flex items-center justify-center text-[#8E8E93] hover:text-[#FFFFFF] hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
+            <button onClick={() => setShowFilters(!showFilters)} className="btn-icon">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
@@ -383,7 +419,7 @@ export default function Explore() {
             <NotificationBell />
 
             {user && (
-              <button onClick={() => navigate(createPageUrl('Messages'))} className="relative w-9 h-9 rounded-full bg-[rgba(255,255,255,0.06)] flex items-center justify-center text-[#8E8E93] hover:text-[#FFFFFF] hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
+              <button onClick={() => navigate(createPageUrl('Messages'))} className="relative btn-icon">
                 <MessageCircle className="w-4 h-4" />
                 {unreadMessagesCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#EF4444] rounded-full flex items-center justify-center">
@@ -395,26 +431,26 @@ export default function Explore() {
 
             {user ? (
               <>
-                <button onClick={() => navigate(createPageUrl('CreatorStudio'))} className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-[rgba(255,255,255,0.06)] text-white text-[12px] font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200 whitespace-nowrap">
+                <button onClick={() => navigate(createPageUrl('CreatorStudio'))} className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-[rgba(255,255,255,0.06)] text-white text-[12px] font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
                   <Palette className="w-4 h-4" />
                   <span>Studio</span>
                 </button>
 
-                <button onClick={handleRecordPitch} className="flex items-center justify-center gap-1.5 px-2 sm:px-3 py-2 bg-gradient-to-r from-[#6366F1] via-[#8B5CF6] to-[#A855F7] text-white text-[12px] font-semibold rounded-xl hover:brightness-110 transition-all duration-200 shadow-[0_4px_20px_rgba(99,102,241,0.4)] whitespace-nowrap">
+                <button onClick={handleRecordPitch} className="flex items-center gap-1.5 px-3 py-2 bg-[#8B5CF6] text-white text-[12px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
                   <Video className="w-4 h-4" />
                   <span className="hidden sm:inline">Record</span>
                 </button>
 
-                <button onClick={() => navigate(createPageUrl('Profile'))} className="w-9 h-9 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-white font-semibold hover:brightness-110 transition-all duration-200 border-2 border-[rgba(255,255,255,0.1)] shadow-[0_2px_8px_rgba(0,0,0,0.3)] flex-shrink-0">
+                <button onClick={() => navigate(createPageUrl('Profile'))} className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-white font-semibold hover:brightness-110 transition-all duration-200 overflow-hidden">
                   {user.avatar_url ? (
-                    <img src={user.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+                    <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <span className="text-sm">{(user.display_name || user.full_name || user.email)?.[0]?.toUpperCase()}</span>
+                    <span className="text-xs">{(user.display_name || user.full_name || user.email)?.[0]?.toUpperCase()}</span>
                   )}
                 </button>
               </>
             ) : (
-              <button onClick={() => navigate('/login')} className="flex items-center gap-2 px-3 sm:px-5 py-2.5 bg-gradient-to-r from-[#6366F1] via-[#8B5CF6] to-[#A855F7] text-white text-[13px] font-semibold rounded-xl hover:brightness-110 transition-all duration-200 shadow-[0_4px_20px_rgba(99,102,241,0.4)]">
+              <button onClick={() => navigate('/login')} className="flex items-center gap-2 px-4 py-2 bg-[#8B5CF6] text-white text-[13px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
                 <LogIn className="w-4 h-4" />
                 <span className="hidden sm:inline">Log In</span>
               </button>
@@ -422,6 +458,7 @@ export default function Explore() {
           </div>
         </div>
 
+        {/* Search */}
         {showSearch && (
           <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)]">
             <div className="relative">
@@ -432,20 +469,20 @@ export default function Explore() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 autoFocus
-                className="w-full pl-11 pr-10 py-3 bg-[#1C1C1E] text-[#FFFFFF] text-[14px] border border-[rgba(255,255,255,0.06)] rounded-xl focus:outline-none focus:border-[#6366F1] focus:shadow-[0_0_0_3px_rgba(99,102,241,0.15)] placeholder:text-[#636366] transition-all duration-200"
+                className="input-field pl-11 pr-10"
               />
-              <button onClick={() => { setShowSearch(false); setSearchInput(''); setShowSearchResults(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[rgba(255,255,255,0.1)] flex items-center justify-center text-[#8E8E93] hover:text-[#FFFFFF] hover:bg-[rgba(255,255,255,0.15)] transition-all duration-200">
+              <button onClick={() => { setShowSearch(false); setSearchInput(''); setShowSearchResults(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 btn-icon w-6 h-6">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
             {!debouncedSearchTerm && searchHistory.length > 0 && (
-              <div className="mt-3 space-y-2">
-                <p className="text-[#636366] text-[11px] font-semibold uppercase tracking-wide">Recent Searches</p>
+              <div className="mt-3 space-y-1">
+                <p className="text-[#636366] text-[11px] font-semibold uppercase tracking-wide px-1">Recent</p>
                 {searchHistory.map((item, i) => (
                   <div key={i} className="flex items-center justify-between group">
                     <button onClick={() => setSearchInput(item)} className="flex-1 text-left px-3 py-2 text-[#8E8E93] hover:text-white text-sm rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition">{item}</button>
-                    <button onClick={() => clearSearchHistory(item)} className="w-6 h-6 rounded-full flex items-center justify-center text-[#636366] hover:text-white hover:bg-[rgba(255,255,255,0.1)] transition opacity-0 group-hover:opacity-100">
+                    <button onClick={() => clearSearchHistory(item)} className="btn-icon w-6 h-6 opacity-0 group-hover:opacity-100">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
@@ -455,7 +492,8 @@ export default function Explore() {
           </div>
         )}
 
-        <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)] overflow-x-auto">
+        {/* Filter tabs */}
+        <div className="px-4 py-2 overflow-x-auto">
           <div className="flex gap-2 min-w-max">
             {[
               { id: 'trending', label: 'Trending', icon: TrendingUp },
@@ -465,7 +503,11 @@ export default function Explore() {
             ].map((sort) => {
               const Icon = sort.icon;
               return (
-                <button key={sort.id} onClick={() => setSortBy(sort.id)} className={`filter-pill flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-semibold tracking-[0.02em] whitespace-nowrap ${sortBy === sort.id ? 'active text-white' : 'bg-[rgba(255,255,255,0.04)] text-[#8E8E93]'}`}>
+                <button 
+                  key={sort.id} 
+                  onClick={() => setSortBy(sort.id)} 
+                  className={`filter-pill flex items-center gap-1.5 ${sortBy === sort.id ? 'active' : ''}`}
+                >
                   <Icon className="w-3.5 h-3.5" />
                   {sort.label}
                 </button>
@@ -474,34 +516,43 @@ export default function Explore() {
           </div>
         </div>
 
+        {/* Category/Stage filters */}
         {showFilters && (
           <div className="px-4 py-4 border-t border-[rgba(255,255,255,0.06)]">
             <div className="space-y-4">
               <div>
-                <label className="block text-[#8E8E93] text-[11px] font-semibold tracking-[0.08em] uppercase mb-2">Category</label>
+                <label className="block text-[#8E8E93] text-[11px] font-semibold tracking-wide uppercase mb-2">Category</label>
                 <div className="flex flex-wrap gap-2">
                   {['all', 'AI/ML', 'SaaS', 'Consumer', 'Fintech', 'Health', 'E-commerce', 'Developer Tools', 'Other'].map((cat) => (
-                    <button key={cat} onClick={() => setSelectedCategory(cat)} className={`filter-pill px-3 py-1.5 rounded-full text-[12px] font-medium tracking-[0.02em] ${selectedCategory === cat ? 'active text-white' : 'bg-[rgba(255,255,255,0.04)] text-[#8E8E93]'}`}>
-                      {cat === 'all' ? 'All Categories' : cat}
+                    <button 
+                      key={cat} 
+                      onClick={() => setSelectedCategory(cat)} 
+                      className={`filter-pill ${selectedCategory === cat ? 'active' : ''}`}
+                    >
+                      {cat === 'all' ? 'All' : cat}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="block text-[#8E8E93] text-[11px] font-semibold tracking-[0.08em] uppercase mb-2">Product Stage</label>
+                <label className="block text-[#8E8E93] text-[11px] font-semibold tracking-wide uppercase mb-2">Stage</label>
                 <div className="flex flex-wrap gap-2">
                   {['all', 'MVP', 'Beta', 'Launched', 'Scaling'].map((stage) => (
-                    <button key={stage} onClick={() => setSelectedStage(stage)} className={`filter-pill px-3 py-1.5 rounded-full text-[12px] font-medium tracking-[0.02em] ${selectedStage === stage ? 'active text-white' : 'bg-[rgba(255,255,255,0.04)] text-[#8E8E93]'}`}>
-                      {stage === 'all' ? 'All Stages' : stage}
+                    <button 
+                      key={stage} 
+                      onClick={() => setSelectedStage(stage)} 
+                      className={`filter-pill ${selectedStage === stage ? 'active' : ''}`}
+                    >
+                      {stage === 'all' ? 'All' : stage}
                     </button>
                   ))}
                 </div>
               </div>
 
               {(selectedCategory !== 'all' || selectedStage !== 'all') && (
-                <button onClick={() => { setSelectedCategory('all'); setSelectedStage('all'); }} className="text-[#6366F1] hover:text-[#818CF8] text-[12px] font-semibold transition-colors duration-200">
-                  Clear all filters
+                <button onClick={() => { setSelectedCategory('all'); setSelectedStage('all'); }} className="text-[#8B5CF6] hover:text-[#A78BFA] text-[12px] font-semibold transition-colors">
+                  Clear filters
                 </button>
               )}
             </div>
@@ -509,34 +560,37 @@ export default function Explore() {
         )}
       </div>
 
-      <div className={showFilters ? 'pt-72' : 'pt-44'}>
-        <div className="px-4 mb-4">
-          {user && showWelcomeCTA && (
+      {/* Content */}
+      <div className={showFilters ? 'pt-64' : 'pt-28'}>
+        {user && showWelcomeCTA && (
+          <div className="px-4 mb-4">
             <WelcomeCTA onDismiss={() => { setShowWelcomeCTA(false); localStorage.setItem('lastWelcomeCTA', Date.now().toString()); }} />
-          )}
-        </div>
+          </div>
+        )}
 
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1 px-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
             {[...Array(12)].map((_, i) => (
-              <div key={i} className="skeleton rounded-lg" style={{ aspectRatio: '4/5', width: '100%' }} />
+              <div key={i} className="w-full" style={{ paddingBottom: '125%' }}>
+                <div className="skeleton rounded-sm absolute inset-0" />
+              </div>
             ))}
           </div>
         ) : filteredPitches.length === 0 ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="text-center px-6">
-              <div className="w-20 h-20 rounded-full bg-[rgba(99,102,241,0.1)] flex items-center justify-center mx-auto mb-4">
-                <Search className="w-10 h-10 text-[#6366F1]" />
+              <div className="w-16 h-16 rounded-full bg-[rgba(139,92,246,0.1)] flex items-center justify-center mx-auto mb-4">
+                <Search className="w-8 h-8 text-[#8B5CF6]" />
               </div>
-              <h3 className="text-white text-[18px] font-semibold mb-2">No startups found</h3>
-              <p className="text-[#8E8E93] text-[14px] mb-6">Try adjusting your search or filters</p>
-              <button onClick={() => { setSearchInput(''); setShowSearch(false); }} className="px-6 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white text-[14px] font-semibold rounded-xl hover:brightness-110 transition-all duration-200 shadow-[0_4px_20px_rgba(99,102,241,0.3)]">
-                Clear search
+              <h3 className="text-white text-[17px] font-semibold mb-2">No startups found</h3>
+              <p className="text-[#71717A] text-[14px] mb-6">Try adjusting your filters</p>
+              <button onClick={() => { setSearchInput(''); setShowSearch(false); setSelectedCategory('all'); setSelectedStage('all'); }} className="btn-primary">
+                Clear all
               </button>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1 px-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
             {filteredPitches.map((pitch, index) => (
               <PitchCard key={pitch.id} pitch={pitch} index={index} onClick={() => handlePitchClick(pitch)} />
             ))}
@@ -544,46 +598,47 @@ export default function Explore() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg border-t border-[rgba(255,255,255,0.06)] z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
+      {/* Bottom Nav */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg border-t border-[rgba(255,255,255,0.06)] z-50 safe-area-bottom">
         <div className="flex items-center justify-around py-2 px-4">
           <button onClick={() => navigate(createPageUrl('Explore'))} className="flex flex-col items-center gap-1 min-h-[44px] justify-center">
-            <div className="w-8 h-8 rounded-full bg-[rgba(99,102,241,0.15)] flex items-center justify-center">
-              <Home className="w-5 h-5 text-[#6366F1]" />
+            <div className="w-8 h-8 rounded-full bg-[rgba(139,92,246,0.15)] flex items-center justify-center">
+              <Home className="w-5 h-5 text-[#8B5CF6]" />
             </div>
-            <span className="text-[10px] font-semibold tracking-[0.04em] uppercase text-[#6366F1]">Home</span>
+            <span className="text-[10px] font-semibold text-[#8B5CF6]">Home</span>
           </button>
 
-          <button onClick={() => navigate(createPageUrl('Community'))} className="flex flex-col items-center gap-1 text-[#71717A] hover:text-[#FFFFFF] transition-colors duration-200 min-h-[44px] justify-center">
+          <button onClick={() => navigate(createPageUrl('Community'))} className="flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
             <Users className="w-6 h-6" />
-            <span className="text-[10px] font-semibold tracking-[0.04em] uppercase">Community</span>
+            <span className="text-[10px] font-semibold">Community</span>
           </button>
 
           <button onClick={handleRecordPitch} className="flex flex-col items-center gap-1 -mt-4 min-h-[44px] justify-center">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-r from-[#6366F1] via-[#8B5CF6] to-[#A855F7] flex items-center justify-center shadow-[0_4px_20px_rgba(99,102,241,0.5)]">
+            <div className="w-14 h-14 rounded-full bg-[#8B5CF6] flex items-center justify-center shadow-[0_4px_20px_rgba(139,92,246,0.5)] hover:bg-[#9D6FFF] transition-colors">
               <Video className="w-6 h-6 text-white" />
             </div>
           </button>
 
           {user ? (
-            <button onClick={() => navigate(createPageUrl('Messages'))} className="relative flex flex-col items-center gap-1 text-[#71717A] hover:text-[#FFFFFF] transition-colors duration-200 min-h-[44px] justify-center">
+            <button onClick={() => navigate(createPageUrl('Messages'))} className="relative flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
               <MessageCircle className="w-6 h-6" />
               {unreadMessagesCount > 0 && (
                 <div className="absolute top-0 right-2 w-4 h-4 bg-[#EF4444] rounded-full flex items-center justify-center">
                   <span className="text-white text-[9px] font-bold">{unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}</span>
                 </div>
               )}
-              <span className="text-[10px] font-semibold tracking-[0.04em] uppercase">Messages</span>
+              <span className="text-[10px] font-semibold">Messages</span>
             </button>
           ) : (
-            <button onClick={() => navigate(createPageUrl('Saved'))} className="flex flex-col items-center gap-1 text-[#71717A] hover:text-[#FFFFFF] transition-colors duration-200 min-h-[44px] justify-center">
+            <button onClick={() => navigate(createPageUrl('Saved'))} className="flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
               <Bookmark className="w-6 h-6" />
-              <span className="text-[10px] font-semibold tracking-[0.04em] uppercase">Saved</span>
+              <span className="text-[10px] font-semibold">Saved</span>
             </button>
           )}
 
-          <button onClick={() => { if (user) navigate(createPageUrl('Profile')); else navigate('/login'); }} className="flex flex-col items-center gap-1 text-[#71717A] hover:text-[#FFFFFF] transition-colors duration-200 min-h-[44px] justify-center">
+          <button onClick={() => { if (user) navigate(createPageUrl('Profile')); else navigate('/login'); }} className="flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
             <User className="w-6 h-6" />
-            <span className="text-[10px] font-semibold tracking-[0.04em] uppercase">Profile</span>
+            <span className="text-[10px] font-semibold">Profile</span>
           </button>
         </div>
       </div>

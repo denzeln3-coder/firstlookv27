@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, TrendingUp, Eye, ThumbsUp, Users, Calendar, Clock, MousePointerClick, MessageCircle, Bookmark, Share2, Target, BarChart3, PieChart as PieChartIcon, Activity, Trophy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -12,12 +12,32 @@ export default function Analytics() {
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
+    queryFn: async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+      
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      
+      return { ...authUser, ...profile };
+    }
   });
 
   const { data: userPitches = [], isLoading } = useQuery({
     queryKey: ['userPitches', user?.id],
-    queryFn: () => base44.entities.Pitch.filter({ founder_id: user.id }, '-created_date'),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pitches')
+        .select('*')
+        .eq('founder_id', user.id)
+        .order('created_date', { ascending: false });
+      
+      if (error) return [];
+      return data;
+    },
     enabled: !!user
   });
 
@@ -26,8 +46,14 @@ export default function Analytics() {
     queryFn: async () => {
       const pitchIds = userPitches.map(p => p.id);
       if (pitchIds.length === 0) return [];
-      const allViews = await base44.entities.PitchView.list();
-      return allViews.filter(v => pitchIds.includes(v.pitch_id));
+      
+      const { data, error } = await supabase
+        .from('pitch_views')
+        .select('*')
+        .in('pitch_id', pitchIds);
+      
+      if (error) return [];
+      return data;
     },
     enabled: userPitches.length > 0
   });
@@ -37,8 +63,14 @@ export default function Analytics() {
     queryFn: async () => {
       const pitchIds = userPitches.map(p => p.id);
       if (pitchIds.length === 0) return [];
-      const allClicks = await base44.entities.LinkClick.list();
-      return allClicks.filter(c => pitchIds.includes(c.pitch_id));
+      
+      const { data, error } = await supabase
+        .from('link_clicks')
+        .select('*')
+        .in('pitch_id', pitchIds);
+      
+      if (error) return [];
+      return data;
     },
     enabled: userPitches.length > 0
   });
@@ -48,8 +80,14 @@ export default function Analytics() {
     queryFn: async () => {
       const pitchIds = userPitches.map(p => p.id);
       if (pitchIds.length === 0) return [];
-      const allComments = await base44.entities.Comment.list();
-      return allComments.filter(c => pitchIds.includes(c.pitch_id));
+      
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .in('pitch_id', pitchIds);
+      
+      if (error) return [];
+      return data;
     },
     enabled: userPitches.length > 0
   });
@@ -59,8 +97,14 @@ export default function Analytics() {
     queryFn: async () => {
       const pitchIds = userPitches.map(p => p.id);
       if (pitchIds.length === 0) return [];
-      const allBookmarks = await base44.entities.Bookmark.list();
-      return allBookmarks.filter(b => pitchIds.includes(b.pitch_id));
+      
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('*')
+        .in('pitch_id', pitchIds);
+      
+      if (error) return [];
+      return data;
     },
     enabled: userPitches.length > 0
   });
@@ -70,8 +114,14 @@ export default function Analytics() {
     queryFn: async () => {
       const pitchIds = userPitches.map(p => p.id);
       if (pitchIds.length === 0) return [];
-      const allUpvotes = await base44.entities.Upvote.list();
-      return allUpvotes.filter(u => pitchIds.includes(u.pitch_id));
+      
+      const { data, error } = await supabase
+        .from('upvotes')
+        .select('*')
+        .in('pitch_id', pitchIds);
+      
+      if (error) return [];
+      return data;
     },
     enabled: userPitches.length > 0
   });
@@ -82,7 +132,7 @@ export default function Analytics() {
     const now = new Date();
     const daysAgo = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
     const cutoff = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-    return data.filter(item => new Date(item.created_date) >= cutoff);
+    return data.filter(item => new Date(item.created_date || item.created_at) >= cutoff);
   };
 
   const filteredViews = getFilteredData(allViews);
@@ -117,8 +167,8 @@ export default function Analytics() {
     if (data.length === 0) return 0;
     const now = new Date();
     const halfPoint = new Date(now.getTime() - (timeRange === '7d' ? 3.5 : timeRange === '30d' ? 15 : 45) * 24 * 60 * 60 * 1000);
-    const recentData = data.filter(item => new Date(item.created_date) >= halfPoint);
-    const oldData = data.filter(item => new Date(item.created_date) < halfPoint);
+    const recentData = data.filter(item => new Date(item.created_date || item.created_at) >= halfPoint);
+    const oldData = data.filter(item => new Date(item.created_date || item.created_at) < halfPoint);
     if (oldData.length === 0) return recentData.length > 0 ? 100 : 0;
     return Math.round(((recentData.length - oldData.length) / oldData.length) * 100);
   }
@@ -134,10 +184,10 @@ export default function Analytics() {
 
     return dateArray.map(date => ({
       date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      views: filteredViews.filter(v => v.created_date?.startsWith(date)).length,
-      upvotes: filteredUpvotes.filter(u => u.created_date?.startsWith(date)).length,
-      comments: filteredComments.filter(c => c.created_date?.startsWith(date)).length,
-      clicks: filteredClicks.filter(c => c.created_date?.startsWith(date)).length
+      views: filteredViews.filter(v => (v.created_date || v.created_at)?.startsWith(date)).length,
+      upvotes: filteredUpvotes.filter(u => (u.created_date || u.created_at)?.startsWith(date)).length,
+      comments: filteredComments.filter(c => (c.created_date || c.created_at)?.startsWith(date)).length,
+      clicks: filteredClicks.filter(c => (c.created_date || c.created_at)?.startsWith(date)).length
     }));
   }, [filteredViews, filteredUpvotes, filteredComments, filteredClicks, timeRange]);
 
@@ -184,13 +234,22 @@ export default function Analytics() {
     return Object.values(categories).sort((a, b) => b.views - a.views);
   }, [userPitches, filteredViews, filteredUpvotes]);
 
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}${createPageUrl('Analytics')}`
+      }
+    });
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-[#09090B] flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-[#FAFAFA] text-[24px] font-bold mb-4">Not Logged In</h2>
           <button
-            onClick={() => base44.auth.redirectToLogin(createPageUrl('Analytics'))}
+            onClick={handleLogin}
             className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-lg hover:brightness-110 transition"
           >
             Log In

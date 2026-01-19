@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -16,15 +16,33 @@ export default function FollowersList() {
 
   const { data: currentUser } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
+    queryFn: async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+      
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      
+      return { ...authUser, ...profile };
+    }
   });
 
   const { data: profileUser } = useQuery({
     queryKey: ['profileUser', userId],
     queryFn: async () => {
       if (!userId) return currentUser;
-      const users = await base44.entities.User.list();
-      return users.find(u => u.id === userId);
+      
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (error) return null;
+      return data;
     },
     enabled: !!currentUser || !!userId
   });
@@ -33,8 +51,14 @@ export default function FollowersList() {
     queryKey: ['followers', profileUser?.id],
     queryFn: async () => {
       if (!profileUser) return [];
-      const follows = await base44.entities.Follow.filter({ following_id: profileUser.id });
-      return follows;
+      
+      const { data, error } = await supabase
+        .from('follows')
+        .select('*')
+        .eq('following_id', profileUser.id);
+      
+      if (error) return [];
+      return data;
     },
     enabled: !!profileUser
   });
@@ -43,23 +67,42 @@ export default function FollowersList() {
     queryKey: ['following', profileUser?.id],
     queryFn: async () => {
       if (!profileUser) return [];
-      const follows = await base44.entities.Follow.filter({ follower_id: profileUser.id });
-      return follows;
+      
+      const { data, error } = await supabase
+        .from('follows')
+        .select('*')
+        .eq('follower_id', profileUser.id);
+      
+      if (error) return [];
+      return data;
     },
     enabled: !!profileUser
   });
 
   const { data: allUsers = [] } = useQuery({
     queryKey: ['allUsers'],
-    queryFn: () => base44.entities.User.list()
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*');
+      
+      if (error) return [];
+      return data;
+    }
   });
 
   const { data: currentUserFollowing = [] } = useQuery({
     queryKey: ['currentUserFollowing', currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const follows = await base44.entities.Follow.filter({ follower_id: currentUser.id });
-      return follows.map(f => f.following_id);
+      
+      const { data, error } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', currentUser.id);
+      
+      if (error) return [];
+      return data.map(f => f.following_id);
     },
     enabled: !!currentUser
   });
@@ -68,33 +111,58 @@ export default function FollowersList() {
     mutationFn: async (targetUserId) => {
       if (!currentUser) return;
       
-      const existingFollow = await base44.entities.Follow.filter({
-        follower_id: currentUser.id,
-        following_id: targetUserId
-      });
+      // Check if already following
+      const { data: existingFollow } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('follower_id', currentUser.id)
+        .eq('following_id', targetUserId)
+        .single();
 
-      if (existingFollow.length > 0) {
-        await base44.entities.Follow.delete(existingFollow[0].id);
+      if (existingFollow) {
+        // Unfollow
+        const { error } = await supabase
+          .from('follows')
+          .delete()
+          .eq('id', existingFollow.id);
+        
+        if (error) throw error;
         return { action: 'unfollow' };
       } else {
-        await base44.entities.Follow.create({
-          follower_id: currentUser.id,
-          following_id: targetUserId
-        });
+        // Follow
+        const { error } = await supabase
+          .from('follows')
+          .insert({
+            follower_id: currentUser.id,
+            following_id: targetUserId
+          });
+        
+        if (error) throw error;
         return { action: 'follow' };
       }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['currentUserFollowing'] });
+      queryClient.invalidateQueries({ queryKey: ['followers'] });
+      queryClient.invalidateQueries({ queryKey: ['following'] });
       toast.success(data.action === 'follow' ? 'Following' : 'Unfollowed');
     }
   });
+
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}${createPageUrl('FollowersList')}`
+      }
+    });
+  };
 
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#000000] flex items-center justify-center">
         <button
-          onClick={() => base44.auth.redirectToLogin(createPageUrl('FollowersList'))}
+          onClick={handleLogin}
           className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition"
         >
           Log In

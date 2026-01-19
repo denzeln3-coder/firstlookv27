@@ -1,5 +1,5 @@
 import React from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Play, Bookmark } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -13,17 +13,30 @@ export default function Saved() {
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      try {
-        return await base44.auth.me();
-      } catch {
-        return null;
-      }
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+      
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      
+      return { ...authUser, ...profile };
     }
   });
 
   const { data: bookmarks = [], isLoading: bookmarksLoading } = useQuery({
     queryKey: ['userBookmarks', user?.id],
-    queryFn: () => base44.entities.Bookmark.filter({ user_id: user.id }),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (error) return [];
+      return data;
+    },
     enabled: !!user
   });
 
@@ -31,12 +44,28 @@ export default function Saved() {
     queryKey: ['bookmarkedPitches', bookmarks.map(b => b.pitch_id)],
     queryFn: async () => {
       if (bookmarks.length === 0) return [];
-      const allPitches = await base44.entities.Pitch.list();
+      
       const bookmarkedIds = bookmarks.map(b => b.pitch_id);
-      return allPitches.filter(p => bookmarkedIds.includes(p.id));
+      
+      const { data, error } = await supabase
+        .from('pitches')
+        .select('*')
+        .in('id', bookmarkedIds);
+      
+      if (error) return [];
+      return data;
     },
     enabled: bookmarks.length > 0
   });
+
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}${createPageUrl('Saved')}`
+      }
+    });
+  };
 
   if (!user) {
     return (
@@ -46,7 +75,7 @@ export default function Saved() {
           <h2 className="text-[#FAFAFA] text-[24px] font-bold mb-4">Save Your Favorites</h2>
           <p className="text-[#A1A1AA] text-[14px] mb-6">Log in to bookmark pitches you love</p>
           <button
-            onClick={() => base44.auth.redirectToLogin(createPageUrl('Saved'))}
+            onClick={handleLogin}
             className="px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-full hover:brightness-110 transition-all duration-150"
           >
             Log In
