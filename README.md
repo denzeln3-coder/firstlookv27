@@ -1,39 +1,29 @@
-**Welcome to your Base44 project** 
+# FirstLook
 
-**About**
+TikTok-style startup discovery platform. Founders record 15-second pitches and 2-minute demos for investors and early adopters to discover.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Tech Stack
+- React + Vite
+- Supabase (database, auth, storage)
+- Tailwind CSS
 
-This project contains everything you need to run your app locally.
+## Features
+- Video pitch recording (15s pitch, 2min demo)
+- Explore feed with upvoting
+- Founder profiles with tabs (Pitches, Demo, Updates, About)
+- Follow founders
+- Collab Mode (Looking for co-founder, designer, etc.)
+- Community channels and meetups
 
-**Edit the code in your local development environment**
-
-Any change pushed to the repo will also be reflected in the Base44 Builder.
-
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+## Run locally
+```bash
+npm install
+npm run dev
 ```
 
-Run the app: `npm run dev`
-
-**Publish your changes**
-
-Open [Base44.com](http://Base44.com) and click on Publish.
-
-**Docs & Support**
-
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+## Environment Variables
+Create a `.env.local` file:
+```
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
