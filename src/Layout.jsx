@@ -13,39 +13,25 @@ export default function Layout({ children }) {
     queryKey: ['currentUser'],
     queryFn: async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser(); 
         if (user) {
           const { data: profile } = await supabase
-            .from('profiles')
+            .from('users')
             .select('*')
             .eq('id', user.id)
             .single();
           return { ...user, ...profile };
         }
         return null;
-      } catch {
+      } catch (error) { 
         return null;
       }
     }
   });
 
-  React.useEffect(() => { return; // DISABLED
-    if (user) {
-      // Check user type selection first
-      if (false && !user.user_type) {
-        setShowUserTypeSelection(true);
-        return;
-      }
-
-      // Then check privacy policy
-      if (false && !user.privacy_policy_accepted || !user.terms_accepted) {
-        const userCreatedDate = new Date(user.created_at);
-        const termsAddedDate = new Date('2026-01-07');
-        
-        if (userCreatedDate >= termsAddedDate) {
-          setShowPrivacyPolicy(true);
-        }
-      }
+  React.useEffect(() => {
+    if (user && !user.user_type) {
+      setShowUserTypeSelection(true);
     }
   }, [user]);
 
