@@ -233,7 +233,7 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
           playsInline
           preload="auto"
           poster={poster}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain bg-black"
           webkit-playsinline="true"
         />
       )}
