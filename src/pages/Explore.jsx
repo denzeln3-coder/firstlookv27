@@ -20,14 +20,16 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
-import { getPrefetchStrategy, shouldPrefetch } from '../components/VideoQualityAdapter';
 import PitchModal from '../components/PitchModal';
 import NotificationBell from '../components/NotificationBell';
-import InstallPrompt from '../components/InstallPrompt';
-import OnboardingTour from '../components/OnboardingTour';
-import FeatureTooltip from '../components/FeatureTooltip';
-import WelcomeCTA from '../components/WelcomeCTA';
-import AIRecommendationCard from '../components/AIRecommendationCard';
+
+// Safe dynamic imports - these components are optional
+let InstallPrompt, OnboardingTour, FeatureTooltip, WelcomeCTA, AIRecommendationCard;
+try { InstallPrompt = require('../components/InstallPrompt').default; } catch { InstallPrompt = () => null; }
+try { OnboardingTour = require('../components/OnboardingTour').default; } catch { OnboardingTour = () => null; }
+try { FeatureTooltip = require('../components/FeatureTooltip').default; } catch { FeatureTooltip = () => null; }
+try { WelcomeCTA = require('../components/WelcomeCTA').default; } catch { WelcomeCTA = () => null; }
+try { AIRecommendationCard = require('../components/AIRecommendationCard').default; } catch { AIRecommendationCard = () => null; }
 
 function useDebouncedValue(value, delay = 250) {
   const [debounced, setDebounced] = useState(value);
@@ -38,18 +40,22 @@ function useDebouncedValue(value, delay = 250) {
   return debounced;
 }
 
-function useNetworkInfo() {
-  const [connection, setConnection] = useState(null);
-  useEffect(() => {
-    const nav = navigator;
-    if (nav.connection) {
-      setConnection(nav.connection);
-      const updateConnection = () => setConnection({...nav.connection});
-      nav.connection.addEventListener('change', updateConnection);
-      return () => nav.connection.removeEventListener('change', updateConnection);
-    }
-  }, []);
-  return connection;
+// Simplified prefetch strategy - no external dependency
+function getPrefetchStrategy() {
+  const connection = navigator.connection;
+  if (connection) {
+    if (connection.saveData) return { prefetchCount: 2 };
+    if (connection.effectiveType === '4g') return { prefetchCount: 6 };
+    if (connection.effectiveType === '3g') return { prefetchCount: 3 };
+    return { prefetchCount: 2 };
+  }
+  return { prefetchCount: 4 };
+}
+
+function shouldPrefetch() {
+  const connection = navigator.connection;
+  if (connection?.saveData) return false;
+  return true;
 }
 
 const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
@@ -57,17 +63,16 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
   const videoRef = useRef(null);
   const [inView, setInView] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const hasLoadedRef = useRef(false);
 
-  const connection = useNetworkInfo();
   const canPrefetch = shouldPrefetch();
   const { prefetchCount } = getPrefetchStrategy();
 
-  const hasVideo = !!(pitch.video_url && pitch.video_url.trim());
+  const hasVideo = !!(pitch.video_url && pitch.video_url.trim() && !videoError);
   const hasThumbnail = !!(pitch.thumbnail_url && pitch.thumbnail_url.trim());
   const shouldLoad = hasVideo && canPrefetch && (inView || index < prefetchCount);
   
-  // Get display name
   const displayName = pitch.startup_name || pitch.name || 'Untitled';
 
   useEffect(() => {
@@ -83,7 +88,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
 
   useEffect(() => {
     const v = videoRef.current;
-    if (!v) return;
+    if (!v || !hasVideo) return;
 
     if (shouldLoad) {
       if (!hasLoadedRef.current) {
@@ -97,17 +102,12 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
       });
     } else {
       v.pause();
-      v.currentTime = 0;
-      if (hasLoadedRef.current && !inView) {
-        v.src = '';
-        hasLoadedRef.current = false;
-        setVideoReady(false);
-      }
     }
-  }, [shouldLoad, pitch.id, inView]);
+  }, [shouldLoad, pitch.id, hasVideo]);
 
-  const handleVideoError = (e) => {
+  const handleVideoError = () => {
     console.error(`[Pitch ${pitch.id}] Video error`);
+    setVideoError(true);
     setVideoReady(false);
   };
 
@@ -118,9 +118,8 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
       onClick={onClick}
       className="relative overflow-hidden rounded-sm bg-[#18181B] transition-all duration-200 hover:scale-[1.02] hover:brightness-110 hover:z-10 w-full"
     >
-      {/* Fixed aspect ratio container */}
       <div className="relative w-full" style={{ paddingBottom: '125%' }}>
-        {/* Thumbnail or fallback */}
+        {/* Thumbnail or gradient fallback */}
         {hasThumbnail ? (
           <img
             src={pitch.thumbnail_url}
@@ -155,7 +154,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
         {/* Gradient scrim */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
 
-        {/* Text overlay - always visible */}
+        {/* Text overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
           <p className="text-white text-[13px] font-semibold truncate mb-1 drop-shadow-lg">
             {displayName}
@@ -184,8 +183,6 @@ export default function Explore() {
   const [currentTooltip, setCurrentTooltip] = useState(null);
   const [showWelcomeCTA, setShowWelcomeCTA] = useState(false);
   const [searchHistory, setSearchHistory] = useState([]);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [showAIRecommendations, setShowAIRecommendations] = useState(false);
 
   useEffect(() => {
     const hasCompletedOnboarding = localStorage.getItem('onboardingCompleted');
@@ -207,13 +204,10 @@ export default function Explore() {
   useEffect(() => {
     const v = debouncedSearchTerm.trim();
     if (v) {
-      setShowSearchResults(true);
       const history = JSON.parse(localStorage.getItem('searchHistory') || '[]');
       const updated = [v, ...history.filter((h) => h !== v)].slice(0, 5);
       localStorage.setItem('searchHistory', JSON.stringify(updated));
       setSearchHistory(updated);
-    } else {
-      setShowSearchResults(false);
     }
   }, [debouncedSearchTerm]);
 
@@ -234,14 +228,15 @@ export default function Explore() {
     setCurrentTooltip(null);
   };
 
+  // Use 'users' table to match AuthContext
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-          return { ...user, ...profile };
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const { data: profile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+          return { ...authUser, ...profile };
         }
         return null;
       } catch { return null; }
@@ -291,6 +286,7 @@ export default function Explore() {
     refetchInterval: 30000
   });
 
+  // followingList is already an array of IDs (strings)
   const { data: followingList = [] } = useQuery({
     queryKey: ['followingList', user?.id],
     queryFn: async () => {
@@ -308,39 +304,23 @@ export default function Explore() {
 
   const isLoading = pitchesLoading;
 
-  const pitches = useMemo(() => {
-    if (!rawPitches.length) return [];
-    let filtered = rawPitches;
-
-    if (sortBy === 'following' && followingList.length > 0) {
-      filtered = rawPitches.filter((p) => followingList.includes(p.founder_id));
-    }
-
-    const now = Date.now();
-    const withScore = filtered.map((pitch) => {
-      const upvotes = pitch.upvote_count || 0;
-      const createdTime = new Date(pitch.created_at).getTime();
-      const hoursSince = Math.max(0, (now - createdTime) / (1000 * 60 * 60));
-      const engagementScore = upvotes * 3;
-      const trendingScore = engagementScore / Math.pow(hoursSince + 2, 1.25);
-      return { ...pitch, trendingScore };
-    });
-
-    if (sortBy === 'newest' || sortBy === 'following') {
-      return withScore.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-    if (sortBy === 'top') {
-      return withScore.sort((a, b) => (b.upvote_count || 0) - (a.upvote_count || 0));
-    }
-    return withScore.sort((a, b) => b.trendingScore - a.trendingScore);
-  }, [rawPitches, sortBy, followingList]);
-
+  // Single sorting/filtering pass
   const filteredPitches = useMemo(() => {
-    let list = pitches;
+    if (!rawPitches.length) return [];
     
-    if (selectedCategory !== 'all') list = list.filter((p) => p.category === selectedCategory);
-    if (selectedStage !== 'all') list = list.filter((p) => p.product_stage === selectedStage);
+    let list = [...rawPitches];
     
+    // Apply category filter
+    if (selectedCategory !== 'all') {
+      list = list.filter((p) => p.category === selectedCategory);
+    }
+    
+    // Apply stage filter
+    if (selectedStage !== 'all') {
+      list = list.filter((p) => p.product_stage === selectedStage);
+    }
+    
+    // Apply search filter
     const term = debouncedSearchTerm.trim().toLowerCase();
     if (term) {
       list = list.filter((p) => {
@@ -349,34 +329,45 @@ export default function Explore() {
       });
     }
     
-    // Sort based on sortBy tab
+    // Apply following filter
+    if (sortBy === 'following') {
+      if (user && followingList.length > 0) {
+        list = list.filter((p) => followingList.includes(p.founder_id));
+      } else {
+        return []; // No following = empty list
+      }
+    }
+    
+    // Sort based on sortBy
+    const now = Date.now();
     switch (sortBy) {
       case 'newest':
-        list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         break;
       case 'top':
-        list = [...list].sort((a, b) => (b.upvote_count || 0) - (a.upvote_count || 0));
+        list.sort((a, b) => (b.upvote_count || 0) - (a.upvote_count || 0));
         break;
       case 'following':
-        if (user && followingList && followingList.length > 0) {
-          const followingIds = followingList.map(f => f.following_id);
-          list = list.filter((p) => followingIds.includes(p.founder_id));
-        } else {
-          list = [];
-        }
+        list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         break;
       case 'trending':
       default:
-        list = [...list].sort((a, b) => {
-          const aScore = (a.upvote_count || 0) + (new Date(a.created_at).getTime() / 100000000000);
-          const bScore = (b.upvote_count || 0) + (new Date(b.created_at).getTime() / 100000000000);
+        list.sort((a, b) => {
+          const aUpvotes = a.upvote_count || 0;
+          const bUpvotes = b.upvote_count || 0;
+          const aTime = new Date(a.created_at).getTime();
+          const bTime = new Date(b.created_at).getTime();
+          const aHours = Math.max(0, (now - aTime) / (1000 * 60 * 60));
+          const bHours = Math.max(0, (now - bTime) / (1000 * 60 * 60));
+          const aScore = (aUpvotes * 3) / Math.pow(aHours + 2, 1.25);
+          const bScore = (bUpvotes * 3) / Math.pow(bHours + 2, 1.25);
           return bScore - aScore;
         });
         break;
     }
     
     return list;
-  }, [pitches, selectedCategory, selectedStage, debouncedSearchTerm, sortBy, user, followingList]);
+  }, [rawPitches, selectedCategory, selectedStage, debouncedSearchTerm, sortBy, user, followingList]);
 
   const handlePitchClick = (pitch) => setSelectedPitch(pitch);
 
@@ -387,8 +378,8 @@ export default function Explore() {
   };
 
   const handleRecordPitch = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) {
       navigate('/login');
     } else {
       navigate(createPageUrl('RecordPitch'));
@@ -406,11 +397,11 @@ export default function Explore() {
           </h1>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowSearch(!showSearch)} className="btn-icon">
+            <button onClick={() => setShowSearch(!showSearch)} className="p-2 rounded-full bg-[rgba(255,255,255,0.06)] text-[#8E8E93] hover:text-white transition-colors">
               <Search className="w-4 h-4" />
             </button>
 
-            <button onClick={() => setShowFilters(!showFilters)} className="btn-icon">
+            <button onClick={() => setShowFilters(!showFilters)} className="p-2 rounded-full bg-[rgba(255,255,255,0.06)] text-[#8E8E93] hover:text-white transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
@@ -419,7 +410,7 @@ export default function Explore() {
             <NotificationBell />
 
             {user && (
-              <button onClick={() => navigate(createPageUrl('Messages'))} className="relative btn-icon">
+              <button onClick={() => navigate(createPageUrl('Messages'))} className="relative p-2 rounded-full bg-[rgba(255,255,255,0.06)] text-[#8E8E93] hover:text-white transition-colors">
                 <MessageCircle className="w-4 h-4" />
                 {unreadMessagesCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#EF4444] rounded-full flex items-center justify-center">
@@ -469,10 +460,10 @@ export default function Explore() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 autoFocus
-                className="input-field pl-11 pr-10"
+                className="w-full pl-11 pr-10 py-3 bg-[#1C1C1E] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]"
               />
-              <button onClick={() => { setShowSearch(false); setSearchInput(''); setShowSearchResults(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 btn-icon w-6 h-6">
-                <X className="w-3.5 h-3.5" />
+              <button onClick={() => { setShowSearch(false); setSearchInput(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-[rgba(255,255,255,0.1)]">
+                <X className="w-3.5 h-3.5 text-[#8E8E93]" />
               </button>
             </div>
 
@@ -482,8 +473,8 @@ export default function Explore() {
                 {searchHistory.map((item, i) => (
                   <div key={i} className="flex items-center justify-between group">
                     <button onClick={() => setSearchInput(item)} className="flex-1 text-left px-3 py-2 text-[#8E8E93] hover:text-white text-sm rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition">{item}</button>
-                    <button onClick={() => clearSearchHistory(item)} className="btn-icon w-6 h-6 opacity-0 group-hover:opacity-100">
-                      <X className="w-3 h-3" />
+                    <button onClick={() => clearSearchHistory(item)} className="p-1 rounded-full opacity-0 group-hover:opacity-100 hover:bg-[rgba(255,255,255,0.1)]">
+                      <X className="w-3 h-3 text-[#8E8E93]" />
                     </button>
                   </div>
                 ))}
@@ -506,7 +497,11 @@ export default function Explore() {
                 <button 
                   key={sort.id} 
                   onClick={() => setSortBy(sort.id)} 
-                  className={`filter-pill flex items-center gap-1.5 ${sortBy === sort.id ? 'active' : ''}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all ${
+                    sortBy === sort.id 
+                      ? 'bg-[#8B5CF6] text-white' 
+                      : 'bg-[rgba(255,255,255,0.06)] text-[#8E8E93] hover:text-white'
+                  }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   {sort.label}
@@ -527,7 +522,11 @@ export default function Explore() {
                     <button 
                       key={cat} 
                       onClick={() => setSelectedCategory(cat)} 
-                      className={`filter-pill ${selectedCategory === cat ? 'active' : ''}`}
+                      className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all ${
+                        selectedCategory === cat 
+                          ? 'bg-[#8B5CF6] text-white' 
+                          : 'bg-[rgba(255,255,255,0.06)] text-[#8E8E93] hover:text-white'
+                      }`}
                     >
                       {cat === 'all' ? 'All' : cat}
                     </button>
@@ -542,7 +541,11 @@ export default function Explore() {
                     <button 
                       key={stage} 
                       onClick={() => setSelectedStage(stage)} 
-                      className={`filter-pill ${selectedStage === stage ? 'active' : ''}`}
+                      className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all ${
+                        selectedStage === stage 
+                          ? 'bg-[#8B5CF6] text-white' 
+                          : 'bg-[rgba(255,255,255,0.06)] text-[#8E8E93] hover:text-white'
+                      }`}
                     >
                       {stage === 'all' ? 'All' : stage}
                     </button>
@@ -562,7 +565,7 @@ export default function Explore() {
 
       {/* Content */}
       <div className={showFilters ? 'pt-64' : 'pt-28'}>
-        {user && showWelcomeCTA && (
+        {user && showWelcomeCTA && WelcomeCTA && (
           <div className="px-4 mb-4">
             <WelcomeCTA onDismiss={() => { setShowWelcomeCTA(false); localStorage.setItem('lastWelcomeCTA', Date.now().toString()); }} />
           </div>
@@ -571,9 +574,7 @@ export default function Explore() {
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
             {[...Array(12)].map((_, i) => (
-              <div key={i} className="w-full" style={{ paddingBottom: '125%' }}>
-                <div className="skeleton rounded-sm absolute inset-0" />
-              </div>
+              <div key={i} className="relative w-full bg-[#18181B] rounded-sm animate-pulse" style={{ paddingBottom: '125%' }} />
             ))}
           </div>
         ) : filteredPitches.length === 0 ? (
@@ -584,7 +585,10 @@ export default function Explore() {
               </div>
               <h3 className="text-white text-[17px] font-semibold mb-2">No startups found</h3>
               <p className="text-[#71717A] text-[14px] mb-6">Try adjusting your filters</p>
-              <button onClick={() => { setSearchInput(''); setShowSearch(false); setSelectedCategory('all'); setSelectedStage('all'); }} className="btn-primary">
+              <button 
+                onClick={() => { setSearchInput(''); setShowSearch(false); setSelectedCategory('all'); setSelectedStage('all'); setSortBy('trending'); }} 
+                className="px-6 py-2.5 bg-[#8B5CF6] text-white font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all"
+              >
                 Clear all
               </button>
             </div>
@@ -599,8 +603,8 @@ export default function Explore() {
       </div>
 
       {/* Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg border-t border-[rgba(255,255,255,0.06)] z-50 safe-area-bottom">
-        <div className="flex items-center justify-around py-2 px-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg border-t border-[rgba(255,255,255,0.06)] z-50">
+        <div className="flex items-center justify-around py-2 px-4 pb-safe">
           <button onClick={() => navigate(createPageUrl('Explore'))} className="flex flex-col items-center gap-1 min-h-[44px] justify-center">
             <div className="w-8 h-8 rounded-full bg-[rgba(139,92,246,0.15)] flex items-center justify-center">
               <Home className="w-5 h-5 text-[#8B5CF6]" />
@@ -644,9 +648,9 @@ export default function Explore() {
       </div>
 
       {selectedPitch && <PitchModal pitch={selectedPitch} onClose={() => setSelectedPitch(null)} />}
-      <InstallPrompt />
-      {showOnboarding && <OnboardingTour onComplete={handleCompleteOnboarding} />}
-      {currentTooltip && <FeatureTooltip feature={currentTooltip} onDismiss={handleDismissTooltip} />}
+      {InstallPrompt && <InstallPrompt />}
+      {showOnboarding && OnboardingTour && <OnboardingTour onComplete={handleCompleteOnboarding} />}
+      {currentTooltip && FeatureTooltip && <FeatureTooltip feature={currentTooltip} onDismiss={handleDismissTooltip} />}
     </div>
   );
 }

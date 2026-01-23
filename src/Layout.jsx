@@ -1,86 +1,55 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import { supabase } from '@/lib/supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
 import UserTypeSelectionModal from './components/UserTypeSelectionModal';
 
 export default function Layout({ children }) {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
   const [showUserTypeSelection, setShowUserTypeSelection] = React.useState(false);
+  const [hasCheckedUserType, setHasCheckedUserType] = React.useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { data: user, isLoading } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: async () => { console.log('Query starting...');
-      try {
-        const { data: { user } } = await supabase.auth.getUser(); 
-        if (user) {
-          const { data: profile, error: profileError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-          console.log('Profile data:', profile, 'Error:', profileError); return { ...user, ...profile };
-        }
-        return null;
-      } catch (error) { 
-        return null;
+  // Use AuthContext instead of separate query - single source of truth
+  const { user, isLoadingAuth } = useAuth();
+
+  // Only show user type selection once per session, and only if user exists but has no type
+  React.useEffect(() => {
+    if (!isLoadingAuth && user && !hasCheckedUserType) {
+      setHasCheckedUserType(true);
+      
+      // Only show modal if user_type is explicitly null/undefined AND not already set in localStorage
+      const hasSelectedType = localStorage.getItem('userTypeSelected');
+      if (!user.user_type && !hasSelectedType) {
+        setShowUserTypeSelection(true);
       }
     }
-  });
+  }, [user, isLoadingAuth, hasCheckedUserType]);
 
+  // Redirect investors to their dashboard
   React.useEffect(() => {
-    if (!isLoading && user && !user.user_type) {
-      setShowUserTypeSelection(true);
+    if (!isLoadingAuth && user?.user_type === 'investor') {
+      if (location.pathname === '/' || location.pathname === '/Explore') {
+        navigate('/InvestorDashboard');
+      }
     }
-  }, [user, isLoading]);
+  }, [user, isLoadingAuth, location.pathname, navigate]);
 
-  React.useEffect(() => {
-    if (user && user.user_type === 'investor' && (location.pathname === '/' || location.pathname === '/Explore')) {
-      navigate('/InvestorDashboard');
-    }
-  }, [user, location.pathname, navigate]);
-
-  React.useEffect(() => { return; // DISABLED
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/service-worker.js')
-          .then((registration) => {
-            console.log('SW registered:', registration);
-            setInterval(() => {
-              registration.update();
-            }, 60000);
-          })
-          .catch((error) => {
-            console.log('SW registration failed:', error);
-          });
-      });
-    }
-  }, []);
+  const handleUserTypeComplete = () => {
+    setShowUserTypeSelection(false);
+    localStorage.setItem('userTypeSelected', 'true');
+  };
 
   return (
     <>
       {showUserTypeSelection && (
-        <UserTypeSelectionModal onComplete={() => setShowUserTypeSelection(false)} />
+        <UserTypeSelectionModal onComplete={handleUserTypeComplete} />
       )}
       {showPrivacyPolicy && !showUserTypeSelection && (
         <PrivacyPolicyModal onAccept={() => setShowPrivacyPolicy(false)} />
       )}
-      <head>
-        <meta name="application-name" content="FirstLook" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="FirstLook" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="theme-color" content="#6366F1" />
-        <link rel="manifest" href="/manifest.json" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
-        <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-      </head>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 

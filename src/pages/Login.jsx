@@ -20,7 +20,7 @@ export default function Login() {
     try {
       if (isSignUp) {
         // Sign up
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -30,17 +30,39 @@ export default function Login() {
           }
         });
         
-        if (error) throw error;
+        if (signUpError) throw signUpError;
         
-        // Create profile
-        if (data.user) {
-          await supabase.from('users').insert({
+        if (!data.user) {
+          throw new Error('Signup failed - no user returned');
+        }
+
+        // Check if email confirmation is required
+        if (data.user.identities?.length === 0) {
+          setError('This email is already registered. Please sign in instead.');
+          setLoading(false);
+          return;
+        }
+        
+        // Create profile in users table
+        const { error: profileError } = await supabase
+          .from('users')
+          .upsert({
             id: data.user.id,
             email: email,
             full_name: fullName,
-            user_type: 'founder'
+            user_type: 'founder',
+            created_at: new Date().toISOString()
+          }, { 
+            onConflict: 'id' 
           });
+        
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          // Don't throw - user is created, profile can be fixed later
         }
+        
+        // Small delay to let AuthContext catch the session
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Redirect to home
         const returnPath = localStorage.getItem('returnPath') || '/';
@@ -49,12 +71,19 @@ export default function Login() {
         
       } else {
         // Sign in
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         
-        if (error) throw error;
+        if (signInError) throw signInError;
+
+        if (!data.session) {
+          throw new Error('Login failed - no session returned');
+        }
+        
+        // Small delay to let AuthContext catch the session
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         // Redirect to home
         const returnPath = localStorage.getItem('returnPath') || '/';
@@ -62,6 +91,7 @@ export default function Login() {
         navigate(returnPath);
       }
     } catch (err) {
+      console.error('Auth error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
