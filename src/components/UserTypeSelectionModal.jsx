@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Rocket, DollarSign, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function UserTypeSelectionModal({ onComplete }) {
   const [selectedType, setSelectedType] = useState(null);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const updateUserTypeMutation = useMutation({
     mutationFn: async (userType) => {
@@ -14,16 +16,20 @@ export default function UserTypeSelectionModal({ onComplete }) {
       if (!user) throw new Error('Not authenticated');
       
       const { error } = await supabase
-        .from('profiles')
+        .from('users')
         .update({ user_type: userType })
         .eq('id', user.id);
       
       if (error) throw error;
+      return userType;
     },
-    onSuccess: () => {
+    onSuccess: (userType) => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
       toast.success('Welcome to FirstLook!');
       onComplete();
+      if (userType === 'investor') {
+        navigate('/InvestorDashboard');
+      }
     },
     onError: (error) => {
       toast.error('Failed to save: ' + error.message);
@@ -39,27 +45,9 @@ export default function UserTypeSelectionModal({ onComplete }) {
   };
 
   const userTypes = [
-    {
-      id: 'founder',
-      icon: Rocket,
-      title: 'Founder',
-      description: 'I\'m building a startup and want to showcase my product',
-      color: 'from-[#6366F1] to-[#8B5CF6]'
-    },
-    {
-      id: 'investor',
-      icon: DollarSign,
-      title: 'Investor',
-      description: 'I\'m looking for startups to invest in or advise',
-      color: 'from-[#22C55E] to-[#10B981]'
-    },
-    {
-      id: 'hunter',
-      icon: Search,
-      title: 'Hunter',
-      description: 'I discover and try new products before anyone else',
-      color: 'from-[#F59E0B] to-[#EAB308]'
-    }
+    { id: 'founder', icon: Rocket, title: 'Founder', description: 'I\'m building a startup and want to showcase my product', color: 'from-[#6366F1] to-[#8B5CF6]' },
+    { id: 'investor', icon: DollarSign, title: 'Investor', description: 'I\'m looking for startups to invest in or advise', color: 'from-[#22C55E] to-[#10B981]' },
+    { id: 'hunter', icon: Search, title: 'Hunter', description: 'I discover and try new products before anyone else', color: 'from-[#F59E0B] to-[#EAB308]' }
   ];
 
   return (
@@ -72,15 +60,7 @@ export default function UserTypeSelectionModal({ onComplete }) {
           {userTypes.map((type) => {
             const Icon = type.icon;
             return (
-              <button
-                key={type.id}
-                onClick={() => setSelectedType(type.id)}
-                className={`w-full p-4 rounded-xl border-2 transition text-left ${
-                  selectedType === type.id
-                    ? 'border-[#6366F1] bg-[#6366F1]/10'
-                    : 'border-[#27272A] bg-[#0A0A0A] hover:border-[#3F3F46]'
-                }`}
-              >
+              <button key={type.id} onClick={() => setSelectedType(type.id)} className={`w-full p-4 rounded-xl border-2 transition text-left ${selectedType === type.id ? 'border-[#6366F1] bg-[#6366F1]/10' : 'border-[#27272A] bg-[#0A0A0A] hover:border-[#3F3F46]'}`}>
                 <div className="flex items-start gap-3">
                   <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${type.color} flex items-center justify-center flex-shrink-0`}>
                     <Icon className="w-6 h-6 text-white" />
@@ -95,11 +75,7 @@ export default function UserTypeSelectionModal({ onComplete }) {
           })}
         </div>
 
-        <button
-          onClick={handleContinue}
-          disabled={updateUserTypeMutation.isPending}
-          className="w-full px-6 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50"
-        >
+        <button onClick={handleContinue} disabled={updateUserTypeMutation.isPending} className="w-full px-6 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50">
           {updateUserTypeMutation.isPending ? 'Saving...' : 'Continue →'}
         </button>
       </div>

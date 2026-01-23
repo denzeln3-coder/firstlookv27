@@ -1,10 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, Filter, TrendingUp, Eye, Bookmark, Send, Sparkles, Bell } from 'lucide-react';
-import AIMatchScore from '../components/AIMatchScore';
+import { ArrowLeft, Filter, TrendingUp, Eye, Bookmark, BookmarkPlus, Sparkles, Bell } from 'lucide-react';
 import PitchModal from '../components/PitchModal';
 import { toast } from 'sonner';
 
@@ -18,365 +17,198 @@ export default function InvestorDashboard() {
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me()
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    }
+  });
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
+      return data;
+    },
+    enabled: !!user
   });
 
   const { data: investorProfile } = useQuery({
     queryKey: ['investorProfile', user?.id],
     queryFn: async () => {
-      const profiles = await base44.entities.Investor.filter({ user_id: user.id });
-      return profiles[0] || null;
+      const { data } = await supabase.from('investor_profiles').select('*').eq('user_id', user.id).single();
+      return data;
     },
     enabled: !!user
   });
 
-  const { data: allPitches = [] } = useQuery({
-    queryKey: ['pitches'],
-    queryFn: () => base44.entities.Pitch.filter({ is_published: true, review_status: 'approved' }, '-created_date')
+  const { data: allStartups = [] } = useQuery({
+    queryKey: ['startups'],
+    queryFn: async () => {
+      const { data } = await supabase.from('startups').select('*').order('created_at', { ascending: false });
+      return data || [];
+    }
   });
 
   const { data: pipeline = [] } = useQuery({
     queryKey: ['investorPipeline', user?.id],
-    queryFn: () => base44.entities.InvestorPipeline.filter({ investor_id: user.id }),
+    queryFn: async () => {
+      const { data } = await supabase.from('investor_pipeline').select('*').eq('investor_id', user.id);
+      return data || [];
+    },
     enabled: !!user
   });
 
   const { data: actions = [] } = useQuery({
     queryKey: ['investorActions', user?.id],
-    queryFn: () => base44.entities.InvestorAction.filter({ investor_id: user.id }),
+    queryFn: async () => {
+      const { data } = await supabase.from('investor_actions').select('*').eq('investor_id', user.id);
+      return data || [];
+    },
     enabled: !!user
   });
 
-  const { data: views = [] } = useQuery({
-    queryKey: ['pitchViews'],
-    queryFn: () => base44.entities.PitchView.list()
-  });
-
-  const { data: aiRecommendations = [] } = useQuery({
-    queryKey: ['aiRecommendations', user?.id],
-    queryFn: async () => {
-      if (!investorProfile) return [];
-      
-      const result = await base44.integrations.Core.InvokeLLM({
-        prompt: `You are a venture capital analyst. Based on this investor profile, identify the TOP 5 most relevant startup pitches from the list.
-
-Investor Profile:
-- Investment Thesis: ${investorProfile.investment_thesis || 'Not specified'}
-- Preferred Categories: ${investorProfile.preferred_categories?.join(', ') || 'All'}
-- Preferred Stages: ${investorProfile.preferred_stages?.join(', ') || 'All'}
-- Check Size: $${investorProfile.ticket_size_min || 0} - $${investorProfile.ticket_size_max || 0}
-- Looking For: ${investorProfile.looking_for || 'Not specified'}
-
-Available Pitches:
-${allPitches.slice(0, 30).map((p, i) => `${i + 1}. ${p.startup_name} - ${p.one_liner} | Category: ${p.category} | Stage: ${p.product_stage} | ID: ${p.id}`).join('\n')}
-
-For each of the TOP 5 matches, provide:
-- pitch_id
-- match_score (0-100)
-- reasons (array of 2-3 short bullet points explaining why it matches)`,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            recommendations: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  pitch_id: { type: "string" },
-                  match_score: { type: "number" },
-                  reasons: { type: "array", items: { type: "string" } }
-                }
-              }
-            }
-          }
-        }
-      });
-
-      return result.recommendations || [];
-    },
-    enabled: !!user && !!investorProfile && allPitches.length > 0 && activeTab === 'for_you',
-    staleTime: 30 * 60 * 1000 // Cache for 30 minutes
-  });
-
-  const filteredPitches = useMemo(() => {
-    if (!investorProfile) return [];
-
-    let filtered = allPitches;
-
-    // Tab filtering
-    if (activeTab === 'for_you') {
-      // Match investor preferences
-      filtered = filtered.filter(pitch => {
-        const categoryMatch = !investorProfile.preferred_categories?.length || 
-          investorProfile.preferred_categories.includes(pitch.category);
-        const stageMatch = !investorProfile.preferred_stages?.length || 
-          investorProfile.preferred_stages.includes(pitch.product_stage);
-        
-        // Exclude passed pitches
-        const hasPassed = actions.some(a => a.pitch_id === pitch.id && a.action_type === 'passed');
-        
-        return categoryMatch && stageMatch && !hasPassed;
-      });
-
-      // Sort by AI match score if available
-      if (aiRecommendations.length > 0) {
-        const scoreMap = new Map(aiRecommendations.map(r => [r.pitch_id, r.match_score]));
-        filtered = filtered.sort((a, b) => {
-          const aScore = scoreMap.get(a.id) || 0;
-          const bScore = scoreMap.get(b.id) || 0;
-          return bScore - aScore;
-        });
+  const saveMutation = useMutation({
+    mutationFn: async (startupId) => {
+      const existing = pipeline.find(p => p.startup_id === startupId);
+      if (existing) {
+        await supabase.from('investor_pipeline').delete().eq('id', existing.id);
+        toast.success('Removed from pipeline');
       } else {
-        // Fallback: boost new pitches (< 7 days)
-        const now = new Date();
-        filtered = filtered.sort((a, b) => {
-          const aDate = new Date(a.created_date);
-          const bDate = new Date(b.created_date);
-          const aDaysOld = (now - aDate) / (1000 * 60 * 60 * 24);
-          const bDaysOld = (now - bDate) / (1000 * 60 * 60 * 24);
-          
-          const aScore = (a.upvote_count || 0) * 10 + (aDaysOld < 7 ? 50 : 0);
-          const bScore = (b.upvote_count || 0) * 10 + (bDaysOld < 7 ? 50 : 0);
-          
-          return bScore - aScore;
-        });
+        await supabase.from('investor_pipeline').insert({ investor_id: user.id, startup_id: startupId, status: 'saved' });
+        toast.success('Saved to pipeline');
       }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['investorPipeline', user?.id] })
+  });
+
+  const filteredStartups = useMemo(() => {
+    let filtered = allStartups;
+    if (activeTab === 'for_you' && investorProfile) {
+      filtered = filtered.filter(s => {
+        const catMatch = !investorProfile.preferred_categories?.length || investorProfile.preferred_categories.includes(s.category);
+        const stgMatch = !investorProfile.preferred_stages?.length || investorProfile.preferred_stages.includes(s.stage);
+        const passed = actions.some(a => a.startup_id === s.id && a.action_type === 'passed');
+        return catMatch && stgMatch && !passed;
+      });
     } else if (activeTab === 'new') {
-      // Last 7 days
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      filtered = filtered.filter(p => new Date(p.created_date) >= sevenDaysAgo);
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+      filtered = filtered.filter(s => new Date(s.created_at) >= weekAgo);
     } else if (activeTab === 'saved') {
-      // Only saved pitches
-      const savedIds = pipeline.map(p => p.pitch_id);
-      filtered = filtered.filter(p => savedIds.includes(p.id));
+      const savedIds = pipeline.map(p => p.startup_id);
+      filtered = filtered.filter(s => savedIds.includes(s.id));
     }
-
-    // Additional filters
-    if (stageFilter !== 'all') {
-      filtered = filtered.filter(p => p.product_stage === stageFilter);
-    }
-    if (categoryFilter !== 'all') {
-      filtered = filtered.filter(p => p.category === categoryFilter);
-    }
-
+    if (stageFilter !== 'all') filtered = filtered.filter(s => s.stage === stageFilter);
+    if (categoryFilter !== 'all') filtered = filtered.filter(s => s.category === categoryFilter);
     return filtered;
-  }, [allPitches, investorProfile, actions, pipeline, activeTab, stageFilter, categoryFilter, aiRecommendations]);
+  }, [allStartups, investorProfile, actions, pipeline, activeTab, stageFilter, categoryFilter]);
 
-  const stats = useMemo(() => {
-    const viewed = new Set(actions.filter(a => a.action_type === 'viewed').map(a => a.pitch_id)).size;
-    const saved = pipeline.length;
-    const contacted = actions.filter(a => a.action_type === 'contacted').length;
-    
-    return { viewed, saved, contacted };
-  }, [actions, pipeline]);
+  const stats = useMemo(() => ({
+    viewed: new Set(actions.filter(a => a.action_type === 'viewed').map(a => a.startup_id)).size,
+    saved: pipeline.length,
+    contacted: actions.filter(a => a.action_type === 'contacted').length
+  }), [actions, pipeline]);
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#000000] flex items-center justify-center">
-        <button
-          onClick={() => base44.auth.redirectToLogin(createPageUrl('InvestorDashboard'))}
-          className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition"
-        >
-          Log In
-        </button>
+  const isInvestor = userProfile?.user_type === 'investor';
+
+  if (!user) return (
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <button onClick={() => navigate('/login')} className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl">Log In</button>
+    </div>
+  );
+
+  if (!isInvestor) return (
+    <div className="min-h-screen bg-black flex items-center justify-center p-6">
+      <div className="text-center max-w-md">
+        <Sparkles className="w-12 h-12 text-[#6366F1] mx-auto mb-4" />
+        <h2 className="text-white text-xl font-bold mb-2">Investor Access Required</h2>
+        <p className="text-[#8E8E93] mb-6">Switch to investor mode to access deal flow.</p>
+        <button onClick={() => navigate(createPageUrl('Settings'))} className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl">Go to Settings</button>
       </div>
-    );
-  }
-
-  if (!user.is_investor) {
-    return (
-      <div className="min-h-screen bg-[#000000] flex items-center justify-center p-6">
-        <div className="text-center">
-          <h2 className="text-white text-xl font-bold mb-4">Investor Access Required</h2>
-          <p className="text-[#8E8E93] mb-6">Create an investor profile to access the deal flow dashboard.</p>
-          <button
-            onClick={() => navigate(createPageUrl('InvestorProfile'))}
-            className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition"
-          >
-            Create Investor Profile
-          </button>
-        </div>
-      </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-[#000000] pb-20">
-      <div className="sticky top-0 bg-[#000000]/95 backdrop-blur-xl z-20 border-b border-[#18181B]">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+    <div className="min-h-screen bg-black pb-20">
+      <div className="sticky top-0 bg-black/95 backdrop-blur-xl z-20 border-b border-[#18181B]">
+        <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => navigate(createPageUrl('Profile'))}
-                className="w-10 h-10 rounded-full bg-[#18181B] flex items-center justify-center text-[#8E8E93] hover:text-white transition"
-              >
-                <ArrowLeft className="w-5 h-5" />
+            <div className="flex items-center gap-3">
+              <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-[#18181B] flex items-center justify-center text-[#8E8E93] hover:text-white"><ArrowLeft className="w-5 h-5" /></button>
+              <div><h1 className="text-white text-xl font-bold">Deal Flow</h1><p className="text-[#8E8E93] text-sm">Discover startups</p></div>
+            </div>
+            <button onClick={() => navigate(createPageUrl('InvestorProfile'))} className="flex items-center gap-2 px-4 py-2 bg-[#18181B] text-white text-sm font-semibold rounded-xl hover:bg-[#27272A]"><Bell className="w-4 h-4" />Preferences</button>
+          </div>
+          <div className="flex gap-2">
+            {[{ id: 'for_you', label: 'For You', icon: TrendingUp }, { id: 'new', label: 'New', icon: Eye }, { id: 'saved', label: 'Saved', icon: Bookmark }].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold ${activeTab === tab.id ? 'bg-[#6366F1] text-white' : 'bg-[#18181B] text-[#8E8E93] hover:bg-[#27272A]'}`}>
+                <tab.icon className="w-4 h-4" />{tab.label}{tab.id === 'saved' && pipeline.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{pipeline.length}</span>}
               </button>
-              <div>
-                <h1 className="text-white text-xl font-bold">Deal Flow Dashboard</h1>
-                <p className="text-[#8E8E93] text-sm">Discover and track startup opportunities</p>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {!investorProfile && activeTab === 'for_you' && (
+          <div className="mb-6 p-4 bg-gradient-to-r from-[#6366F1]/10 to-[#8B5CF6]/10 border border-[#6366F1]/20 rounded-xl">
+            <div className="flex items-start gap-3">
+              <Sparkles className="w-5 h-5 text-[#6366F1] mt-0.5" />
+              <div><h3 className="text-white font-semibold mb-1">Set up your preferences</h3><p className="text-[#8E8E93] text-sm mb-3">Tell us what you're looking for to get personalized recommendations.</p>
+                <button onClick={() => navigate(createPageUrl('InvestorProfile'))} className="px-4 py-2 bg-[#6366F1] text-white text-sm font-semibold rounded-lg">Set Preferences</button>
               </div>
             </div>
-            <button
-              onClick={() => navigate(createPageUrl('DealFlowSettings'))}
-              className="flex items-center gap-2 px-4 py-2 bg-[#18181B] text-white text-sm font-semibold rounded-xl hover:bg-[#27272A] transition"
-            >
-              <Bell className="w-4 h-4" />
-              Alerts
-            </button>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex gap-2">
-            {[
-              { id: 'for_you', label: 'For You', icon: TrendingUp },
-              { id: 'new', label: 'New This Week', icon: Eye },
-              { id: 'saved', label: 'Saved', icon: Bookmark }
-            ].map(tab => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
-                    activeTab === tab.id
-                      ? 'bg-[#6366F1] text-white'
-                      : 'bg-[#18181B] text-[#8E8E93] hover:bg-[#27272A]'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* AI Recommendations Banner */}
-        {activeTab === 'for_you' && aiRecommendations.length > 0 && (
-          <div className="mb-6 p-4 bg-gradient-to-r from-[#6366F1]/10 to-[#8B5CF6]/10 border border-[#6366F1]/20 rounded-xl">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-5 h-5 text-[#6366F1]" />
-              <h3 className="text-white font-semibold">AI-Powered Recommendations</h3>
-            </div>
-            <p className="text-[#8E8E93] text-sm">
-              Showing {aiRecommendations.length} highly matched startups based on your investment thesis
-            </p>
           </div>
         )}
 
-        {/* Filters */}
         <div className="flex items-center gap-3 mb-6">
           <Filter className="w-4 h-4 text-[#8E8E93]" />
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
-            className="px-3 py-2 bg-[#18181B] text-white border border-[#27272A] rounded-lg text-sm focus:outline-none focus:border-[#6366F1]"
-          >
-            <option value="all">All Stages</option>
-            <option value="MVP">MVP</option>
-            <option value="Beta">Beta</option>
-            <option value="Launched">Launched</option>
-            <option value="Scaling">Scaling</option>
+          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="px-3 py-2 bg-[#18181B] text-white border border-[#27272A] rounded-lg text-sm">
+            <option value="all">All Stages</option><option value="Idea">Idea</option><option value="MVP">MVP</option><option value="Beta">Beta</option><option value="Launched">Launched</option><option value="Scaling">Scaling</option>
           </select>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-[#18181B] text-white border border-[#27272A] rounded-lg text-sm focus:outline-none focus:border-[#6366F1]"
-          >
-            <option value="all">All Categories</option>
-            <option value="AI/ML">AI/ML</option>
-            <option value="SaaS">SaaS</option>
-            <option value="Consumer">Consumer</option>
-            <option value="Fintech">Fintech</option>
-            <option value="Health">Health</option>
-            <option value="E-commerce">E-commerce</option>
-            <option value="Developer Tools">Developer Tools</option>
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-3 py-2 bg-[#18181B] text-white border border-[#27272A] rounded-lg text-sm">
+            <option value="all">All Categories</option><option value="AI/ML">AI/ML</option><option value="SaaS">SaaS</option><option value="Consumer">Consumer</option><option value="Fintech">Fintech</option><option value="Health">Health</option><option value="E-commerce">E-commerce</option><option value="Developer Tools">Developer Tools</option><option value="Education">Education</option>
           </select>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4">
-            <div className="text-[#8E8E93] text-sm mb-1">Pitches Viewed</div>
-            <div className="text-white text-2xl font-bold">{stats.viewed}</div>
-          </div>
-          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4">
-            <div className="text-[#8E8E93] text-sm mb-1">Saved</div>
-            <div className="text-white text-2xl font-bold">{stats.saved}</div>
-          </div>
-          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4">
-            <div className="text-[#8E8E93] text-sm mb-1">Reached Out</div>
-            <div className="text-white text-2xl font-bold">{stats.contacted}</div>
-          </div>
+          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4"><div className="text-[#8E8E93] text-sm mb-1">Viewed</div><div className="text-white text-2xl font-bold">{stats.viewed}</div></div>
+          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4"><div className="text-[#8E8E93] text-sm mb-1">Saved</div><div className="text-white text-2xl font-bold">{stats.saved}</div></div>
+          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4"><div className="text-[#8E8E93] text-sm mb-1">Contacted</div><div className="text-white text-2xl font-bold">{stats.contacted}</div></div>
         </div>
 
-        {/* Pitches Grid */}
-        {filteredPitches.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-[#8E8E93] mb-4">No pitches match your criteria</p>
-            {activeTab === 'for_you' && !investorProfile?.preferred_categories?.length && (
-              <button
-                onClick={() => navigate(createPageUrl('InvestorProfile'))}
-                className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition"
-              >
-                Update Preferences
-              </button>
-            )}
+        {filteredStartups.length === 0 ? (
+          <div className="text-center py-12"><p className="text-[#8E8E93] mb-4">{activeTab === 'saved' ? 'No saved startups yet' : 'No startups match your criteria'}</p>
+            {activeTab === 'saved' && <button onClick={() => setActiveTab('for_you')} className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl">Discover Startups</button>}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-4">
-            {filteredPitches.map(pitch => {
-              const recommendation = aiRecommendations.find(r => r.pitch_id === pitch.id);
-              
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredStartups.map(startup => {
+              const isSaved = pipeline.some(p => p.startup_id === startup.id);
               return (
-                <button
-                  key={pitch.id}
-                  onClick={() => setSelectedPitch(pitch)}
-                  className="relative overflow-hidden rounded-xl bg-[#18181B] hover:brightness-110 transition group"
-                  style={{ aspectRatio: '4/5' }}
-                >
-                  {pitch.thumbnail_url ? (
-                    <img src={pitch.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
-                      <span className="text-white text-4xl font-bold">{pitch.startup_name?.[0]?.toUpperCase()}</span>
+                <div key={startup.id} className="relative overflow-hidden rounded-xl bg-[#18181B] group" style={{ aspectRatio: '4/5' }}>
+                  <button onClick={() => setSelectedPitch(startup)} className="w-full h-full">
+                    {startup.thumbnail_url ? <img src={startup.thumbnail_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]"><span className="text-white text-3xl font-bold">{(startup.startup_name || startup.name)?.[0]?.toUpperCase()}</span></div>}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                      <h3 className="text-white font-semibold text-sm mb-1 line-clamp-1">{startup.startup_name || startup.name}</h3>
+                      <p className="text-white/70 text-xs line-clamp-2">{startup.one_liner || startup.tagline}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        {startup.category && <span className="px-2 py-0.5 bg-white/10 rounded-full text-white/60 text-xs">{startup.category}</span>}
+                        {startup.stage && <span className="px-2 py-0.5 bg-[#6366F1]/20 rounded-full text-[#6366F1] text-xs">{startup.stage}</span>}
+                      </div>
                     </div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 p-3">
-                    <h3 className="text-white font-semibold text-sm mb-1">{pitch.startup_name}</h3>
-                    <p className="text-white/70 text-xs line-clamp-2">{pitch.one_liner}</p>
-                  </div>
-                  {pipeline.some(p => p.pitch_id === pitch.id) && (
-                    <div className="absolute top-2 left-2">
-                      <Bookmark className="w-5 h-5 text-[#6366F1] fill-[#6366F1]" />
-                    </div>
-                  )}
-                  {recommendation && (
-                    <AIMatchScore 
-                      score={recommendation.match_score} 
-                      reasons={recommendation.reasons}
-                    />
-                  )}
-                </button>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); saveMutation.mutate(startup.id); }} className={`absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center ${isSaved ? 'bg-[#6366F1] text-white' : 'bg-black/50 text-white/70 hover:bg-black/70'}`}>
+                    {isSaved ? <Bookmark className="w-4 h-4 fill-current" /> : <BookmarkPlus className="w-4 h-4" />}
+                  </button>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {selectedPitch && (
-        <PitchModal
-          key={selectedPitch.id}
-          pitch={selectedPitch}
-          onClose={() => setSelectedPitch(null)}
-          isInvestorView={true}
-        />
-      )}
+      {selectedPitch && <PitchModal pitch={selectedPitch} onClose={() => setSelectedPitch(null)} isInvestorView={true} />}
     </div>
   );
 }

@@ -34,7 +34,7 @@ export default function Login() {
         
         // Create profile
         if (data.user) {
-          await supabase.from('profiles').insert({
+          await supabase.from('users').insert({
             id: data.user.id,
             email: email,
             full_name: fullName,

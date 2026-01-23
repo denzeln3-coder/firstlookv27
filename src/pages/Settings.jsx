@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, User, Bell, Lock, Palette, HelpCircle, LogOut, ChevronRight, Moon, Sun, Trash2 } from 'lucide-react';
+import { ArrowLeft, User, Bell, Lock, Palette, HelpCircle, LogOut, ChevronRight, Moon, Sun, Trash2, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Settings() {
@@ -54,6 +54,7 @@ export default function Settings() {
       title: 'Account',
       items: [
         { icon: User, label: 'Edit Profile', onClick: () => navigate(createPageUrl('EditProfile')) },
+        { icon: TrendingUp, label: 'Investor Dashboard', onClick: () => navigate(createPageUrl('InvestorDashboard')) },
         { icon: Lock, label: 'Privacy', onClick: () => toast.info('Coming soon') },
       ]
     },

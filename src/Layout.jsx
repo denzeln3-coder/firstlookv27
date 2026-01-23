@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
@@ -8,19 +9,21 @@ import UserTypeSelectionModal from './components/UserTypeSelectionModal';
 export default function Layout({ children }) {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
   const [showUserTypeSelection, setShowUserTypeSelection] = React.useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const { data: user } = useQuery({
+  const { data: user, isLoading } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: async () => {
+    queryFn: async () => { console.log('Query starting...');
       try {
         const { data: { user } } = await supabase.auth.getUser(); 
         if (user) {
-          const { data: profile } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from('users')
             .select('*')
             .eq('id', user.id)
             .single();
-          return { ...user, ...profile };
+          console.log('Profile data:', profile, 'Error:', profileError); return { ...user, ...profile };
         }
         return null;
       } catch (error) { 
@@ -30,10 +33,16 @@ export default function Layout({ children }) {
   });
 
   React.useEffect(() => {
-    if (user && !user.user_type) {
+    if (!isLoading && user && !user.user_type) {
       setShowUserTypeSelection(true);
     }
-  }, [user]);
+  }, [user, isLoading]);
+
+  React.useEffect(() => {
+    if (user && user.user_type === 'investor' && (location.pathname === '/' || location.pathname === '/Explore')) {
+      navigate('/InvestorDashboard');
+    }
+  }, [user, location.pathname, navigate]);
 
   React.useEffect(() => { return; // DISABLED
     if ('serviceWorker' in navigator) {
