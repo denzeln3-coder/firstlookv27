@@ -1,37 +1,66 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { supabase } from "./supabase";
 
 const AuthContext = createContext({});
 export const useAuth = () => useContext(AuthContext);
 
-async function fetchUserWithProfile(authUser) {
-  if (!authUser) return null;
-  try {
-    const { data: profile } = await supabase.from("users").select("*").eq("id", authUser.id).single();
-    return { ...authUser, ...profile };
-  } catch (error) {
-    return authUser;
-  }
-}
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const userWithProfile = await fetchUserWithProfile(session?.user);
-      setUser(userWithProfile);
-      setIsLoadingAuth(false);
-    });
+    mountedRef.current = true;
+
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!mountedRef.current) return;
+        
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from("users")
+            .select("*")
+            .eq("id", session.user.id)
+            .single();
+          if (mountedRef.current) {
+            setUser({ ...session.user, ...profile });
+          }
+        }
+      } catch (error) {
+        console.error("Auth error:", error);
+      } finally {
+        if (mountedRef.current) {
+          setIsLoadingAuth(false);
+        }
+      }
+    };
+
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "INITIAL_SESSION") return;
-      const userWithProfile = await fetchUserWithProfile(session?.user);
-      setUser(userWithProfile);
+      if (event === "INITIAL_SESSION" || !mountedRef.current) return;
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+        if (mountedRef.current) {
+          setUser({ ...session.user, ...profile });
+        }
+      } else {
+        if (mountedRef.current) {
+          setUser(null);
+        }
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mountedRef.current = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {

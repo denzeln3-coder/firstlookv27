@@ -1,23 +1,12 @@
 import React from 'react';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { ArrowRight, Video, Search, TrendingUp } from 'lucide-react';
 
 export default function Home() {
   const navigate = useNavigate();
-
-  const { data: user, isLoading } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: async () => {
-      try {
-        return await base44.auth.me();
-      } catch {
-        return null;
-      }
-    }
-  });
+  const { user, isLoadingAuth: isLoading } = useAuth();
 
   // Redirect to Explore if logged in
   React.useEffect(() => {
