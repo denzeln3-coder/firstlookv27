@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Camera, Upload, X, Plus, Trash2, User, Briefcase, Building2, Users as Users, Award, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, Camera, Upload, X, Plus, Trash2, User, Briefcase, Building2, Users, Award, Link as LinkIcon, Pencil, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ export default function EditProfile() {
   const fileInputRef = useRef(null);
   const logoInputRef = useRef(null);
   const teamPhotoInputRef = useRef(null);
+  const editTeamPhotoInputRef = useRef(null);
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['currentUser'],
@@ -86,6 +87,11 @@ export default function EditProfile() {
   const [uploading, setUploading] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingTeamPhoto, setUploadingTeamPhoto] = useState(false);
+  
+  // Edit state for team members
+  const [editingMemberId, setEditingMemberId] = useState(null);
+  const [editingMemberData, setEditingMemberData] = useState(null);
+  const [uploadingEditPhoto, setUploadingEditPhoto] = useState(false);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data) => {
@@ -106,20 +112,28 @@ export default function EditProfile() {
     }
   });
 
-  const uploadFile = async (file, bucket = 'avatars') => {
+  // Universal upload function - uses 'avatars' bucket for all uploads since it exists
+  const uploadFile = async (file, folder = 'general') => {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const fileName = `${folder}/${user.id}-${Date.now()}.${fileExt}`;
 
+    // Try uploading to 'avatars' bucket (which should exist)
+    // We use subfolders to organize: avatars/logos/, avatars/team-photos/, etc.
     const { error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(filePath, file);
+      .from('avatars')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      throw uploadError;
+    }
 
     const { data: { publicUrl } } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(filePath);
+      .from('avatars')
+      .getPublicUrl(fileName);
 
     return publicUrl;
   };
@@ -130,11 +144,12 @@ export default function EditProfile() {
 
     setUploading(true);
     try {
-      const publicUrl = await uploadFile(file, 'avatars');
+      const publicUrl = await uploadFile(file, 'profiles');
       setFormData({ ...formData, avatar_url: publicUrl });
       toast.success('Avatar uploaded!');
     } catch (error) {
-      toast.error('Failed to upload avatar');
+      console.error('Avatar upload failed:', error);
+      toast.error('Failed to upload avatar. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -150,7 +165,8 @@ export default function EditProfile() {
       setFormData({ ...formData, company_logo: publicUrl });
       toast.success('Logo uploaded!');
     } catch (error) {
-      toast.error('Failed to upload logo');
+      console.error('Logo upload failed:', error);
+      toast.error('Failed to upload logo. Please try again.');
     } finally {
       setUploadingLogo(false);
     }
@@ -166,9 +182,28 @@ export default function EditProfile() {
       setNewTeamMember({ ...newTeamMember, photo_url: publicUrl });
       toast.success('Photo uploaded!');
     } catch (error) {
-      toast.error('Failed to upload photo');
+      console.error('Team photo upload failed:', error);
+      toast.error('Failed to upload photo. Please try again.');
     } finally {
       setUploadingTeamPhoto(false);
+    }
+  };
+
+  // Handle photo upload for editing existing team member
+  const handleEditTeamPhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingMemberData) return;
+
+    setUploadingEditPhoto(true);
+    try {
+      const publicUrl = await uploadFile(file, 'team-photos');
+      setEditingMemberData({ ...editingMemberData, photo_url: publicUrl });
+      toast.success('Photo updated!');
+    } catch (error) {
+      console.error('Edit photo upload failed:', error);
+      toast.error('Failed to upload photo. Please try again.');
+    } finally {
+      setUploadingEditPhoto(false);
     }
   };
 
@@ -203,6 +238,32 @@ export default function EditProfile() {
       queryClient.invalidateQueries({ queryKey: ['teamMembers'] });
       setNewTeamMember({ name: '', role: '', bio: '', photo_url: '', linkedin_url: '', twitter_url: '' });
       toast.success('Team member added!');
+    },
+    onError: (error) => {
+      console.error('Add team member error:', error);
+      toast.error('Failed to add team member');
+    }
+  });
+
+  // UPDATE team member mutation
+  const updateTeamMemberMutation = useMutation({
+    mutationFn: async ({ id, data }) => {
+      const { error } = await supabase
+        .from('user_team_members')
+        .update(data)
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teamMembers'] });
+      setEditingMemberId(null);
+      setEditingMemberData(null);
+      toast.success('Team member updated!');
+    },
+    onError: (error) => {
+      console.error('Update team member error:', error);
+      toast.error('Failed to update team member');
     }
   });
 
@@ -220,6 +281,37 @@ export default function EditProfile() {
       toast.success('Team member removed');
     }
   });
+
+  // Start editing a team member
+  const startEditingMember = (member) => {
+    setEditingMemberId(member.id);
+    setEditingMemberData({
+      name: member.name || '',
+      role: member.role || '',
+      bio: member.bio || '',
+      photo_url: member.photo_url || '',
+      linkedin_url: member.linkedin_url || '',
+      twitter_url: member.twitter_url || ''
+    });
+  };
+
+  // Save edited team member
+  const saveEditedMember = () => {
+    if (!editingMemberData.name || !editingMemberData.role) {
+      toast.error('Please fill in name and role');
+      return;
+    }
+    updateTeamMemberMutation.mutate({
+      id: editingMemberId,
+      data: editingMemberData
+    });
+  };
+
+  // Cancel editing
+  const cancelEditing = () => {
+    setEditingMemberId(null);
+    setEditingMemberData(null);
+  };
 
   const handleSave = () => {
     if (!formData.display_name.trim()) {
@@ -542,22 +634,121 @@ export default function EditProfile() {
             <div className="space-y-4">
               {teamMembers.map((member) => (
                 <div key={member.id} className="p-5 bg-[#0A0A0A] border border-[#18181B] rounded-2xl">
-                  <div className="flex items-start gap-4">
-                    {member.photo_url && (
-                      <img src={member.photo_url} alt={member.name} className="w-16 h-16 rounded-xl object-cover" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-white text-[16px] font-semibold mb-1">{member.name}</h4>
-                      <p className="text-[#8E8E93] text-[13px] mb-2">{member.role}</p>
-                      {member.bio && <p className="text-[#71717A] text-[13px] leading-relaxed">{member.bio}</p>}
+                  {editingMemberId === member.id ? (
+                    // EDIT MODE
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => editTeamPhotoInputRef.current?.click()}
+                          disabled={uploadingEditPhoto}
+                          className="w-16 h-16 rounded-xl bg-[#000000] border-2 border-dashed border-[#27272A] flex items-center justify-center hover:border-[#6366F1] transition overflow-hidden flex-shrink-0"
+                        >
+                          {editingMemberData.photo_url ? (
+                            <img src={editingMemberData.photo_url} alt="" className="w-full h-full object-cover" />
+                          ) : uploadingEditPhoto ? (
+                            <div className="w-5 h-5 border-2 border-[#6366F1]/20 border-t-[#6366F1] rounded-full animate-spin" />
+                          ) : (
+                            <Camera className="w-5 h-5 text-[#3F3F46]" />
+                          )}
+                        </button>
+                        <input 
+                          ref={editTeamPhotoInputRef} 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={handleEditTeamPhotoUpload} 
+                          className="hidden" 
+                        />
+                        
+                        <input
+                          type="text"
+                          value={editingMemberData.name}
+                          onChange={(e) => setEditingMemberData({ ...editingMemberData, name: e.target.value })}
+                          placeholder="Full name"
+                          className="flex-1 px-4 py-3 bg-[#000000] text-white text-[15px] border border-[#18181B] rounded-xl focus:outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20 placeholder:text-[#3F3F46] transition"
+                        />
+                      </div>
+                      
+                      <input
+                        type="text"
+                        value={editingMemberData.role}
+                        onChange={(e) => setEditingMemberData({ ...editingMemberData, role: e.target.value })}
+                        placeholder="Role (e.g., Co-Founder & CEO)"
+                        className="w-full px-4 py-3 bg-[#000000] text-white text-[15px] border border-[#18181B] rounded-xl focus:outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20 placeholder:text-[#3F3F46] transition"
+                      />
+                      
+                      <textarea
+                        value={editingMemberData.bio}
+                        onChange={(e) => setEditingMemberData({ ...editingMemberData, bio: e.target.value })}
+                        placeholder="Brief bio (optional)"
+                        rows={2}
+                        className="w-full px-4 py-3 bg-[#000000] text-white text-[15px] border border-[#18181B] rounded-xl focus:outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20 placeholder:text-[#3F3F46] transition resize-none"
+                      />
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="url"
+                          value={editingMemberData.linkedin_url}
+                          onChange={(e) => setEditingMemberData({ ...editingMemberData, linkedin_url: e.target.value })}
+                          placeholder="LinkedIn URL"
+                          className="px-4 py-3 bg-[#000000] text-white text-[15px] border border-[#18181B] rounded-xl focus:outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20 placeholder:text-[#3F3F46] transition"
+                        />
+                        <input
+                          type="url"
+                          value={editingMemberData.twitter_url}
+                          onChange={(e) => setEditingMemberData({ ...editingMemberData, twitter_url: e.target.value })}
+                          placeholder="Twitter URL"
+                          className="px-4 py-3 bg-[#000000] text-white text-[15px] border border-[#18181B] rounded-xl focus:outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20 placeholder:text-[#3F3F46] transition"
+                        />
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={cancelEditing}
+                          className="flex-1 px-4 py-3 bg-[#18181B] text-white text-[14px] font-medium rounded-xl hover:bg-[#27272A] transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={saveEditedMember}
+                          disabled={updateTeamMemberMutation.isPending}
+                          className="flex-1 px-4 py-3 bg-gradient-to-r from-[#22C55E] to-[#10B981] text-white text-[14px] font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          <Check className="w-4 h-4" />
+                          {updateTeamMemberMutation.isPending ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => deleteTeamMemberMutation.mutate(member.id)}
-                      className="p-2 text-[#EF4444] hover:bg-[#EF4444]/10 rounded-lg transition"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  ) : (
+                    // VIEW MODE
+                    <div className="flex items-start gap-4">
+                      {member.photo_url ? (
+                        <img src={member.photo_url} alt={member.name} className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-xl font-bold">{member.name?.[0]?.toUpperCase() || '?'}</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-white text-[16px] font-semibold mb-1">{member.name}</h4>
+                        <p className="text-[#8E8E93] text-[13px] mb-2">{member.role}</p>
+                        {member.bio && <p className="text-[#71717A] text-[13px] leading-relaxed">{member.bio}</p>}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => startEditingMember(member)}
+                          className="p-2 text-[#6366F1] hover:bg-[#6366F1]/10 rounded-lg transition"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteTeamMemberMutation.mutate(member.id)}
+                          className="p-2 text-[#EF4444] hover:bg-[#EF4444]/10 rounded-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
 

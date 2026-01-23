@@ -92,6 +92,7 @@ export default function Profile() {
     staleTime: 2 * 60 * 1000
   });
 
+  // FIXED: Use startup_id instead of pitch_id
   const { data: savedPitches = [], isLoading: savedLoading } = useQuery({
     queryKey: ['savedPitches', currentUser?.id],
     queryFn: async () => {
@@ -99,12 +100,12 @@ export default function Profile() {
       
       const { data: bookmarks } = await supabase
         .from('bookmarks')
-        .select('pitch_id')
+        .select('startup_id')
         .eq('user_id', currentUser.id);
       
       if (!bookmarks || bookmarks.length === 0) return [];
       
-      const pitchIds = bookmarks.map(b => b.pitch_id);
+      const pitchIds = bookmarks.map(b => b.startup_id);
       const { data: pitches } = await supabase
         .from('startups')
         .select('*')
@@ -115,6 +116,7 @@ export default function Profile() {
     enabled: isOwnProfile && !!currentUser
   });
 
+  // FIXED: Use startup_id instead of pitch_id
   const { data: upvotedPitches = [], isLoading: upvotedLoading } = useQuery({
     queryKey: ['upvotedPitches', currentUser?.id],
     queryFn: async () => {
@@ -122,12 +124,12 @@ export default function Profile() {
       
       const { data: upvotes } = await supabase
         .from('upvotes')
-        .select('pitch_id')
+        .select('startup_id')
         .eq('user_id', currentUser.id);
       
       if (!upvotes || upvotes.length === 0) return [];
       
-      const pitchIds = upvotes.map(u => u.pitch_id);
+      const pitchIds = upvotes.map(u => u.startup_id);
       const { data: pitches } = await supabase
         .from('startups')
         .select('*')
@@ -271,10 +273,10 @@ export default function Profile() {
   const deletePitchMutation = useMutation({
     mutationFn: async (pitchId) => {
       // Delete related data first
-      await supabase.from('upvotes').delete().eq('pitch_id', pitchId);
-      await supabase.from('comments').delete().eq('pitch_id', pitchId);
-      await supabase.from('bookmarks').delete().eq('pitch_id', pitchId);
-      await supabase.from('pitch_views').delete().eq('pitch_id', pitchId);
+      await supabase.from('upvotes').delete().eq('startup_id', pitchId);
+      await supabase.from('comments').delete().eq('startup_id', pitchId);
+      await supabase.from('bookmarks').delete().eq('startup_id', pitchId);
+      await supabase.from('pitch_views').delete().eq('startup_id', pitchId);
       
       // Delete the pitch
       const { error } = await supabase.from('startups').delete().eq('id', pitchId);
@@ -339,6 +341,36 @@ export default function Profile() {
     navigator.clipboard.writeText(profileUrl);
     toast.success('Profile link copied!');
     setShowMenu(false);
+  };
+
+  // Helper to get display name
+  const getDisplayName = (user) => {
+    if (!user) return 'User';
+    return user.display_name || user.full_name || user.username || user.email?.split('@')[0] || 'User';
+  };
+
+  // Helper to get username without double @
+  const getUsername = (user) => {
+    if (!user) return 'user';
+    if (user.username) {
+      return user.username.replace(/^@+/, ''); // Remove any leading @ symbols
+    }
+    return user.display_name || user.full_name || 'user';
+  };
+
+  // Helper to format website URL
+  const formatWebsiteUrl = (url) => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    return `https://${url}`;
+  };
+
+  // Helper to display website URL without protocol
+  const displayWebsiteUrl = (url) => {
+    if (!url) return '';
+    return url.replace(/^https?:\/\//, '').replace(/\/$/, '');
   };
 
   if (userLoading) {
@@ -406,7 +438,7 @@ export default function Profile() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-[#FFFFFF] text-[18px] font-semibold tracking-[-0.01em]">
-          {profileUser.display_name || profileUser.full_name || profileUser.username || 'Profile'}
+          {getDisplayName(profileUser)}
         </h1>
         <div className="flex items-center gap-3">
           <NotificationBell />
@@ -469,22 +501,22 @@ export default function Profile() {
       </div>
 
       {/* Profile Section */}
-      <div className="pt-16 px-6 pb-6">
+      <div className="pt-20 px-6 pb-6">
         {/* Avatar */}
         <div className="flex justify-center mb-4">
           <div className="w-[100px] h-[100px] rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-white text-[40px] font-bold overflow-hidden border-2 border-[rgba(255,255,255,0.1)] shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
             {profileUser.avatar_url ? (
-              <img src={profileUser.avatar_url} alt={profileUser.display_name || profileUser.username} className="w-full h-full object-cover" />
+              <img src={profileUser.avatar_url} alt={getDisplayName(profileUser)} className="w-full h-full object-cover" />
             ) : (
-              <span>{(profileUser.display_name || profileUser.full_name || profileUser.username || profileUser.email)?.[0]?.toUpperCase()}</span>
+              <span>{getDisplayName(profileUser)[0]?.toUpperCase()}</span>
             )}
           </div>
         </div>
 
-        {/* Username with verification */}
+        {/* Username with verification - FIXED: No double @ */}
         <div className="flex items-center justify-center gap-2 mb-4">
           <h2 className="text-[#FFFFFF] text-[18px] font-semibold tracking-[-0.01em]">
-            {profileUser.username ? `@${profileUser.username.replace('@', '')}` : (profileUser.display_name || profileUser.full_name || 'User')}
+            @{getUsername(profileUser)}
           </h2>
           {profileUser.is_verified && (
             <CheckCircle2 className="w-5 h-5 text-[#3B82F6] fill-[#3B82F6]" />
@@ -584,7 +616,7 @@ export default function Profile() {
             {(profileUser.company_website || profileUser.company_twitter || profileUser.company_linkedin) && (
               <div className="flex items-center justify-center gap-4 pt-3 border-t border-[rgba(255,255,255,0.1)]">
                 {profileUser.company_website && (
-                  <a href={profileUser.company_website} target="_blank" rel="noopener noreferrer" className="text-[#8E8E93] hover:text-[#FFFFFF] transition">
+                  <a href={formatWebsiteUrl(profileUser.company_website)} target="_blank" rel="noopener noreferrer" className="text-[#8E8E93] hover:text-[#FFFFFF] transition">
                     <Globe className="w-5 h-5" />
                   </a>
                 )}
@@ -639,7 +671,7 @@ export default function Profile() {
         {(profileUser.twitter_url || profileUser.linkedin_url || profileUser.rockz_url || profileUser.website_url) && (
           <div className="flex items-center justify-center gap-4 mb-6">
             {profileUser.website_url && (
-              <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer" className="text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors">
+              <a href={formatWebsiteUrl(profileUser.website_url)} target="_blank" rel="noopener noreferrer" className="text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors">
                 <Globe className="w-6 h-6" />
               </a>
             )}
@@ -723,6 +755,32 @@ export default function Profile() {
           )}
         </div>
 
+        {/* Saved Tab Sub-navigation */}
+        {activeTab === 'saved' && isOwnProfile && (
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setSavedTab('bookmarked')}
+              className={`px-4 py-2 rounded-full text-[13px] font-medium transition-all ${
+                savedTab === 'bookmarked'
+                  ? 'bg-[#6366F1] text-white'
+                  : 'bg-[rgba(255,255,255,0.06)] text-[#8E8E93]'
+              }`}
+            >
+              Bookmarked
+            </button>
+            <button
+              onClick={() => setSavedTab('upvoted')}
+              className={`px-4 py-2 rounded-full text-[13px] font-medium transition-all ${
+                savedTab === 'upvoted'
+                  ? 'bg-[#6366F1] text-white'
+                  : 'bg-[rgba(255,255,255,0.06)] text-[#8E8E93]'
+              }`}
+            >
+              Upvoted
+            </button>
+          </div>
+        )}
+
         {/* Content Display */}
         {activeTab === 'drafts' ? (
           drafts.length === 0 ? (
@@ -764,130 +822,140 @@ export default function Profile() {
               ))}
             </div>
           )
-        ) : isLoading ? (
-          <div className="grid grid-cols-3 gap-[2px]">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton" style={{ aspectRatio: '4/5', width: '100%' }} />
-            ))}
-          </div>
-        ) : displayPitches.length === 0 ? (
-          <div className="text-center py-12 px-6">
-            <p className="text-[#8E8E93] mb-6 text-[16px]">
-              {activeTab === 'pitches' ? "No pitches yet" : "No saved pitches yet"}
-            </p>
-            <button
-              onClick={() => navigate(activeTab === 'pitches' ? createPageUrl('RecordPitch') : createPageUrl('Explore'))}
-              className="px-6 py-3 bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-white text-[14px] font-semibold rounded-xl"
-            >
-              {activeTab === 'pitches' ? "Record your first pitch" : "Discover startups"}
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-[2px]">
-            {displayPitches.map((pitch) => (
-              <div key={pitch.id} className="relative group">
-                <button
-                  onClick={() => setSelectedPitch(pitch)}
-                  className="relative overflow-hidden w-full"
-                  style={{ aspectRatio: '4/5' }}
-                >
-                  {pitch.thumbnail_url ? (
-                    <img src={pitch.thumbnail_url} alt={pitch.startup_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
-                      <span className="text-white text-[32px] font-bold">{pitch.startup_name?.[0]?.toUpperCase()}</span>
-                    </div>
-                  )}
-                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
-                    <Play className="w-3.5 h-3.5 text-white fill-white" />
-                    <span className="text-white text-[10px] font-semibold">{pitch.upvote_count || 0}</span>
-                  </div>
-                </button>
-                {isOwnProfile && activeTab === 'pitches' && (
-                  <div className="absolute top-2 right-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowPitchMenu(showPitchMenu === pitch.id ? null : pitch.id);
-                      }}
-                      className="w-8 h-8 bg-black/60 rounded-full flex items-center justify-center"
-                    >
-                      <MoreHorizontal className="w-4 h-4 text-white" />
-                    </button>
-                    {showPitchMenu === pitch.id && (
-                      <div className="absolute top-10 right-0 bg-[#18181B] border border-[#27272A] rounded-lg shadow-xl min-w-[120px] z-10">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowPitchMenu(null);
-                            setDeletingPitch(pitch);
-                            setShowDeleteConfirm(true);
-                          }}
-                          className="w-full px-4 py-3 text-left text-[#EF4444] text-[14px] hover:bg-[#27272A] flex items-center gap-2"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
+        ) : activeTab === 'pitches' || activeTab === 'saved' ? (
+          isLoading ? (
+            <div className="grid grid-cols-3 gap-1">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="skeleton rounded-lg" style={{ aspectRatio: '1/1', width: '100%' }} />
+              ))}
+            </div>
+          ) : displayPitches.length === 0 ? (
+            <div className="text-center py-12 px-6">
+              <p className="text-[#8E8E93] mb-6 text-[16px]">
+                {activeTab === 'pitches' ? "No pitches yet" : "No saved pitches yet"}
+              </p>
+              <button
+                onClick={() => navigate(activeTab === 'pitches' ? createPageUrl('RecordPitch') : createPageUrl('Explore'))}
+                className="px-6 py-3 bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-white text-[14px] font-semibold rounded-xl"
+              >
+                {activeTab === 'pitches' ? "Record your first pitch" : "Discover startups"}
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1">
+              {displayPitches.map((pitch) => (
+                <div key={pitch.id} className="relative group">
+                  <button
+                    onClick={() => setSelectedPitch(pitch)}
+                    className="relative overflow-hidden w-full rounded-lg"
+                    style={{ aspectRatio: '1/1' }}
+                  >
+                    {pitch.thumbnail_url ? (
+                      <img src={pitch.thumbnail_url} alt={pitch.startup_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
+                        <span className="text-white text-[24px] font-bold">{pitch.startup_name?.[0]?.toUpperCase()}</span>
                       </div>
                     )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
+                      <Play className="w-3 h-3 text-white fill-white" />
+                      <span className="text-white text-[10px] font-semibold">{pitch.upvote_count || 0}</span>
+                    </div>
+                  </button>
+                  {isOwnProfile && activeTab === 'pitches' && (
+                    <div className="absolute top-2 right-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPitchMenu(showPitchMenu === pitch.id ? null : pitch.id);
+                        }}
+                        className="w-8 h-8 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <MoreHorizontal className="w-4 h-4 text-white" />
+                      </button>
+                      {showPitchMenu === pitch.id && (
+                        <div className="absolute top-10 right-0 bg-[#18181B] border border-[#27272A] rounded-lg shadow-xl min-w-[120px] z-10">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowPitchMenu(null);
+                              setDeletingPitch(pitch);
+                              setShowDeleteConfirm(true);
+                            }}
+                            className="w-full px-4 py-3 text-left text-[#EF4444] text-[14px] hover:bg-[#27272A] flex items-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        ) : null}
+
+        {/* Demo Tab */}
+        {activeTab === "demo" && (
+          <div className="py-12">
+            <div className="text-center">
+              <p className="text-[#71717A] text-[14px]">No demo video yet</p>
+            </div>
+          </div>
+        )}
+
+        {/* Updates Tab */}
+        {activeTab === "updates" && (
+          <div className="py-12">
+            <div className="text-center">
+              <p className="text-[#71717A] text-[14px]">No updates yet</p>
+            </div>
+          </div>
+        )}
+
+        {/* About Tab */}
+        {activeTab === "about" && (
+          <div className="py-6">
+            <div className="space-y-6">
+              {profileUser?.bio && (
+                <div>
+                  <h4 className="text-[#71717A] text-[12px] uppercase tracking-wide mb-2">Bio</h4>
+                  <p className="text-[#FAFAFA] text-[14px] leading-relaxed">{profileUser.bio}</p>
+                </div>
+              )}
+              {profileUser?.website_url && (
+                <div>
+                  <h4 className="text-[#71717A] text-[12px] uppercase tracking-wide mb-2">Website</h4>
+                  <a 
+                    href={formatWebsiteUrl(profileUser.website_url)} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-[#6366F1] text-[14px] hover:underline"
+                  >
+                    {displayWebsiteUrl(profileUser.website_url)}
+                  </a>
+                </div>
+              )}
+              {profileUser?.collab_modes?.length > 0 && (
+                <div>
+                  <h4 className="text-[#71717A] text-[12px] uppercase tracking-wide mb-2">Looking For</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {profileUser.collab_modes.map(mode => (
+                      <span key={mode} className="px-3 py-1.5 bg-[#18181B] text-[#A1A1AA] text-[12px] rounded-full">{mode}</span>
+                    ))}
                   </div>
-                )}
-              </div>
-            ))}
+                </div>
+              )}
+              {!profileUser?.bio && !profileUser?.website_url && !profileUser?.collab_modes?.length && (
+                <p className="text-[#71717A] text-[14px] text-center py-8">No additional info available</p>
+              )}
+            </div>
           </div>
         )}
       </div>
-
-      {/* Demo Tab */}
-      {activeTab === "demo" && (
-        <div className="px-6 pt-6">
-          <div className="text-center py-12">
-            <p className="text-[#71717A] text-[14px]">No demo video yet</p>
-          </div>
-        </div>
-      )}
-
-      {/* Updates Tab */}
-      {activeTab === "updates" && (
-        <div className="px-6 pt-6">
-          <div className="text-center py-12">
-            <p className="text-[#71717A] text-[14px]">No updates yet</p>
-          </div>
-        </div>
-      )}
-
-      {/* About Tab */}
-      {activeTab === "about" && (
-        <div className="px-6 pt-6">
-          <div className="space-y-4">
-            {profileUser?.bio && (
-              <div>
-                <h4 className="text-[#71717A] text-[12px] uppercase tracking-wide mb-2">Bio</h4>
-                <p className="text-[#FAFAFA] text-[14px]">{profileUser.bio}</p>
-              </div>
-            )}
-            {profileUser?.website_url && (
-              <div>
-                <h4 className="text-[#71717A] text-[12px] uppercase tracking-wide mb-2">Website</h4>
-                <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer" className="text-[#6366F1] text-[14px] hover:underline">{profileUser.website_url}</a>
-              </div>
-            )}
-            {profileUser?.collab_modes?.length > 0 && (
-              <div>
-                <h4 className="text-[#71717A] text-[12px] uppercase tracking-wide mb-2">Looking For</h4>
-                <div className="flex flex-wrap gap-2">
-                  {profileUser.collab_modes.map(mode => (
-                    <span key={mode} className="px-3 py-1 bg-[#18181B] text-[#A1A1AA] text-[12px] rounded-full">{mode}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {!profileUser?.bio && !profileUser?.website_url && !profileUser?.collab_modes?.length && (
-              <p className="text-[#71717A] text-[14px] text-center py-8">No additional info available</p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && deletingPitch && (

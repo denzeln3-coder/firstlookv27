@@ -1,15 +1,27 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ExternalLink, MessageCircle, ArrowUp, Calendar, Tag, User } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ExternalLink, MessageCircle, ArrowUp, Calendar, Tag, User, Pencil, Check, X, Send, Volume2, VolumeX } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { toast } from 'sonner';
 
 export default function Demo() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const pitchId = localStorage.getItem('selectedPitchId');
+  
+  // Get pitch ID from URL params first, then localStorage as fallback
+  const urlPitchId = searchParams.get('id') || searchParams.get('pitch');
+  const storedPitchId = localStorage.getItem('selectedPitchId');
+  const pitchId = urlPitchId || storedPitchId;
+
+  const videoRef = useRef(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
+  const [showComments, setShowComments] = useState(false);
+  const [newComment, setNewComment] = useState('');
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -65,6 +77,43 @@ export default function Demo() {
     enabled: !!user && !!pitchId
   });
 
+  // Fetch comments for this pitch
+  const { data: comments = [], isLoading: commentsLoading } = useQuery({
+    queryKey: ['comments', pitchId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('startup_id', pitchId)
+        .order('created_at', { ascending: false });
+      
+      if (error || !data) return [];
+      
+      // Fetch user profiles for comments
+      const userIds = [...new Set(data.map(c => c.user_id))];
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, username, avatar_url, full_name')
+          .in('id', userIds);
+        
+        return data.map(comment => ({
+          ...comment,
+          profile: profiles?.find(p => p.id === comment.user_id) || null
+        }));
+      }
+      return data;
+    },
+    enabled: !!pitchId
+  });
+
+  // Set edited description when pitch loads
+  useEffect(() => {
+    if (pitch?.description) {
+      setEditedDescription(pitch.description);
+    }
+  }, [pitch?.description]);
+
   const upvoteMutation = useMutation({
     mutationFn: async () => {
       if (!user) return;
@@ -95,10 +144,95 @@ export default function Demo() {
     }
   });
 
+  // Update description mutation
+  const updateDescriptionMutation = useMutation({
+    mutationFn: async (newDescription) => {
+      const { error } = await supabase
+        .from('startups')
+        .update({ description: newDescription })
+        .eq('id', pitchId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pitch', pitchId] });
+      setIsEditingDescription(false);
+      toast.success('Description updated!');
+    },
+    onError: (error) => {
+      toast.error('Failed to update description');
+      console.error(error);
+    }
+  });
+
+  // Add comment mutation
+  const addCommentMutation = useMutation({
+    mutationFn: async (content) => {
+      const { error } = await supabase
+        .from('comments')
+        .insert({
+          startup_id: pitchId,
+          user_id: user.id,
+          content: content
+        });
+      
+      if (error) throw error;
+      
+      // Update comment count on startup
+      const currentCount = pitch?.comment_count || 0;
+      await supabase
+        .from('startups')
+        .update({ comment_count: currentCount + 1 })
+        .eq('id', pitchId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comments', pitchId] });
+      queryClient.invalidateQueries({ queryKey: ['pitch', pitchId] });
+      setNewComment('');
+      toast.success('Comment posted!');
+    },
+    onError: (error) => {
+      toast.error('Failed to post comment');
+      console.error(error);
+    }
+  });
+
+  const handleToggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const handleSaveDescription = () => {
+    if (!editedDescription.trim()) {
+      toast.error('Description cannot be empty');
+      return;
+    }
+    updateDescriptionMutation.mutate(editedDescription.trim());
+  };
+
+  const handleCancelEdit = () => {
+    setEditedDescription(pitch?.description || '');
+    setIsEditingDescription(false);
+  };
+
+  const handleSubmitComment = () => {
+    if (!user) {
+      toast.error('Please log in to comment');
+      return;
+    }
+    if (!newComment.trim()) {
+      toast.error('Please enter a comment');
+      return;
+    }
+    addCommentMutation.mutate(newComment.trim());
+  };
+
   if (pitchLoading) {
     return (
       <div className="min-h-screen bg-[#000000] flex items-center justify-center">
-        <div className="skeleton w-32 h-8 rounded-xl" />
+        <div className="w-10 h-10 border-2 border-[#6366F1]/20 border-t-[#6366F1] rounded-full animate-spin" />
       </div>
     );
   }
@@ -141,13 +275,17 @@ export default function Demo() {
 
   // Use demo_url if available, otherwise fall back to video_url
   const videoToPlay = pitch.demo_url || pitch.video_url;
+  
+  // Check if current user is the owner
+  const isOwner = user && pitch.founder_id === user.id;
 
   return (
     <div className="min-h-screen bg-[#000000] pb-20">
+      {/* Header */}
       <div className="sticky top-0 bg-[#000000]/95 backdrop-blur-lg z-20 border-b border-[rgba(255,255,255,0.06)]">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <button
-            onClick={() => navigate(createPageUrl('Explore'))}
+            onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-[#8E8E93] hover:text-white transition"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -158,15 +296,31 @@ export default function Demo() {
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Video Player */}
-        <div className="aspect-video bg-black rounded-2xl overflow-hidden mb-6 border border-[rgba(255,255,255,0.06)]">
+        <div className="relative aspect-video bg-black rounded-2xl overflow-hidden mb-6 border border-[rgba(255,255,255,0.06)]">
           {videoToPlay ? (
-            <video
-              src={videoToPlay}
-              controls
-              autoPlay
-              className="w-full h-full"
-              poster={pitch.thumbnail_url}
-            />
+            <>
+              <video
+                ref={videoRef}
+                src={videoToPlay}
+                controls
+                autoPlay
+                muted={isMuted}
+                playsInline
+                className="w-full h-full"
+                poster={pitch.thumbnail_url}
+              />
+              {/* Mute/Unmute Button Overlay */}
+              <button
+                onClick={handleToggleMute}
+                className="absolute bottom-4 right-4 p-2 bg-black/60 rounded-full hover:bg-black/80 transition z-10"
+              >
+                {isMuted ? (
+                  <VolumeX className="w-5 h-5 text-white" />
+                ) : (
+                  <Volume2 className="w-5 h-5 text-white" />
+                )}
+              </button>
+            </>
           ) : pitch.thumbnail_url ? (
             <img
               src={pitch.thumbnail_url}
@@ -249,26 +403,151 @@ export default function Demo() {
             </a>
           )}
           <button
-            onClick={() => {
-              if (!user) {
-                toast.error('Please log in to comment');
-                return;
-              }
-              navigate(createPageUrl('Explore') + `?pitch=${pitchId}`);
-            }}
-            className="flex items-center gap-2 px-6 py-3 bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-white font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition"
+            onClick={() => setShowComments(!showComments)}
+            className={`flex items-center gap-2 px-6 py-3 border font-semibold rounded-xl transition ${
+              showComments 
+                ? 'bg-[#6366F1] border-[#6366F1] text-white' 
+                : 'bg-[rgba(255,255,255,0.06)] border-[rgba(255,255,255,0.1)] text-white hover:bg-[rgba(255,255,255,0.1)]'
+            }`}
           >
             <MessageCircle className="w-4 h-4" />
-            Comment
+            {comments.length > 0 ? `${comments.length} Comments` : 'Comment'}
           </button>
         </div>
 
-        {/* About Section */}
+        {/* Comments Section */}
+        {showComments && (
+          <div className="bg-[#0A0A0A] border border-[rgba(255,255,255,0.06)] rounded-2xl p-6 mb-6">
+            <h2 className="text-white text-lg font-bold mb-4">COMMENTS</h2>
+            
+            {/* Add Comment Input */}
+            {user ? (
+              <div className="flex gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {user.user_metadata?.avatar_url ? (
+                    <img src={user.user_metadata.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-sm font-bold">
+                      {(user.email || 'U')[0].toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
+                    placeholder="Add a comment..."
+                    className="flex-1 px-4 py-2.5 bg-[#1C1C1E] text-white text-sm rounded-xl border border-[rgba(255,255,255,0.1)] focus:border-[#6366F1] focus:outline-none"
+                  />
+                  <button
+                    onClick={handleSubmitComment}
+                    disabled={!newComment.trim() || addCommentMutation.isPending}
+                    className="px-4 py-2.5 bg-[#6366F1] text-white rounded-xl disabled:opacity-50 hover:brightness-110 transition"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-6 p-4 bg-[#1C1C1E] rounded-xl text-center">
+                <p className="text-[#8E8E93] text-sm mb-2">Log in to leave a comment</p>
+                <button
+                  onClick={() => navigate('/Login')}
+                  className="text-[#6366F1] text-sm font-semibold hover:underline"
+                >
+                  Log In
+                </button>
+              </div>
+            )}
+            
+            {/* Comments List */}
+            {commentsLoading ? (
+              <div className="text-center py-8">
+                <div className="w-6 h-6 border-2 border-[#6366F1]/20 border-t-[#6366F1] rounded-full animate-spin mx-auto" />
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="text-center py-8">
+                <MessageCircle className="w-10 h-10 text-[#3F3F46] mx-auto mb-2" />
+                <p className="text-[#8E8E93] text-sm">No comments yet. Be the first!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {comments.map((comment) => (
+                  <div key={comment.id} className="flex gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {comment.profile?.avatar_url ? (
+                        <img src={comment.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-white text-sm font-bold">
+                          {(comment.profile?.display_name || comment.profile?.full_name || 'U')[0].toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-white font-semibold text-sm">
+                          {comment.profile?.display_name || comment.profile?.full_name || 'User'}
+                        </span>
+                        <span className="text-[#8E8E93] text-xs">
+                          {getTimeSince(comment.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-[#D4D4D8] text-sm">{comment.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* About Section - Editable for owner */}
         <div className="bg-[#0A0A0A] border border-[rgba(255,255,255,0.06)] rounded-2xl p-6 mb-6">
-          <h2 className="text-white text-lg font-bold mb-4">ABOUT THIS DEMO</h2>
-          <p className="text-[#8E8E93] text-sm leading-relaxed">
-            {pitch.description || 'This demo showcases the product in action. Watch to see how it works and what problems it solves.'}
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white text-lg font-bold">ABOUT THIS DEMO</h2>
+            {isOwner && !isEditingDescription && (
+              <button
+                onClick={() => setIsEditingDescription(true)}
+                className="p-2 text-[#8E8E93] hover:text-[#6366F1] hover:bg-[#6366F1]/10 rounded-lg transition"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          
+          {isEditingDescription ? (
+            <div className="space-y-3">
+              <textarea
+                value={editedDescription}
+                onChange={(e) => setEditedDescription(e.target.value)}
+                placeholder="Describe your demo..."
+                rows={4}
+                className="w-full px-4 py-3 bg-[#1C1C1E] text-white text-sm rounded-xl border border-[rgba(255,255,255,0.1)] focus:border-[#6366F1] focus:outline-none resize-none"
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 text-[#8E8E93] hover:text-white transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveDescription}
+                  disabled={updateDescriptionMutation.isPending}
+                  className="px-4 py-2 bg-[#6366F1] text-white rounded-xl font-medium hover:brightness-110 transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  {updateDescriptionMutation.isPending ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[#8E8E93] text-sm leading-relaxed">
+              {pitch.description || 'This demo showcases the product in action. Watch to see how it works and what problems it solves.'}
+            </p>
+          )}
         </div>
 
         {/* Founder Section */}
@@ -288,7 +567,10 @@ export default function Demo() {
                   )}
                 </div>
                 <div>
-                  <div className="text-white font-semibold">{founder.full_name || founder.email || 'Founder'}</div>
+                  <div className="text-white font-semibold">{founder.display_name || founder.full_name || founder.email || 'Founder'}</div>
+                  {founder.username && (
+                    <div className="text-[#8E8E93] text-sm">{founder.username}</div>
+                  )}
                 </div>
               </button>
               {user && founder.id !== user.id && (

@@ -20,6 +20,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
   const [showPassModal, setShowPassModal] = useState(false);
   const [passFeedback, setPassFeedback] = useState('');
   const [showInfoCard, setShowInfoCard] = useState(false);
+  const [localUpvoteCount, setLocalUpvoteCount] = useState(pitch.upvote_count || 0);
   const viewStartTime = React.useRef(Date.now());
 
   // Track view on mount
@@ -58,6 +59,11 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     };
   }, [pitch.id]);
 
+  // Sync local upvote count with pitch prop
+  React.useEffect(() => {
+    setLocalUpvoteCount(pitch.upvote_count || 0);
+  }, [pitch.upvote_count]);
+
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
@@ -66,11 +72,16 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     }
   });
 
+  // FIXED: Use 'users' table instead of 'profiles'
   const { data: founder } = useQuery({
     queryKey: ['founder', pitch?.founder_id],
     queryFn: async () => {
       if (!pitch?.founder_id) return null;
-      const { data } = await supabase.from('profiles').select('*').eq('id', pitch.founder_id).single();
+      const { data, error } = await supabase.from('users').select('*').eq('id', pitch.founder_id).single();
+      if (error) {
+        console.warn('Founder fetch error:', error.message);
+        return null;
+      }
       return data;
     },
     enabled: !!pitch?.founder_id
@@ -114,12 +125,17 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     }
   });
 
+  // FIXED: Use 'users' table instead of 'profiles' for comment users
   const { data: commentUsers = [] } = useQuery({
     queryKey: ['commentUsers', comments.map(c => c.user_id)],
     queryFn: async () => {
       if (comments.length === 0) return [];
       const userIds = [...new Set(comments.map(c => c.user_id))];
-      const { data } = await supabase.from('profiles').select('*').in('id', userIds);
+      const { data, error } = await supabase.from('users').select('*').in('id', userIds);
+      if (error) {
+        console.warn('Comment users fetch error:', error.message);
+        return [];
+      }
       return data || [];
     },
     enabled: comments.length > 0
@@ -136,7 +152,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
         toast.success('Unfollowed');
       } else {
         await supabase.from('follows').insert({ follower_id: user.id, following_id: pitch.founder_id });
-        toast.success(`Following ${founder?.display_name || founder?.username || 'founder'}`);
+        toast.success(`Following ${founder?.display_name || founder?.full_name || founder?.username || 'founder'}`);
       }
     },
     onSuccess: () => {
@@ -152,10 +168,12 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       
       if (upvotes && upvotes.length > 0) {
         await supabase.from('upvotes').delete().eq('id', upvotes[0].id);
-        await supabase.from('startups').update({ upvote_count: Math.max(0, (pitch.upvote_count || 0) - 1) }).eq('id', pitch.id);
+        await supabase.from('startups').update({ upvote_count: Math.max(0, localUpvoteCount - 1) }).eq('id', pitch.id);
+        setLocalUpvoteCount(prev => Math.max(0, prev - 1));
       } else {
         await supabase.from('upvotes').insert({ user_id: user.id, startup_id: pitch.id });
-        await supabase.from('startups').update({ upvote_count: (pitch.upvote_count || 0) + 1 }).eq('id', pitch.id);
+        await supabase.from('startups').update({ upvote_count: localUpvoteCount + 1 }).eq('id', pitch.id);
+        setLocalUpvoteCount(prev => prev + 1);
       }
     },
     onSuccess: () => {
@@ -319,6 +337,18 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     onClose();
   };
 
+  // Helper to get display name from user object
+  const getDisplayName = (userObj) => {
+    if (!userObj) return 'User';
+    return userObj.display_name || userObj.full_name || userObj.username || userObj.email?.split('@')[0] || 'User';
+  };
+
+  // Helper to get username from user object
+  const getUsername = (userObj) => {
+    if (!userObj) return 'user';
+    return userObj.username || userObj.display_name || userObj.full_name || 'user';
+  };
+
   if (!pitch) return null;
 
   if (!pitch.video_url) {
@@ -414,7 +444,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
           {founder && (
             <div className="flex items-center gap-2 mt-2">
               <button onClick={() => navigate(createPageUrl('Profile') + `?userId=${pitch.founder_id}`)} className="text-[#E4E4E7] text-[12px] hover:text-white transition" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
-                by @{founder.username || founder.display_name || 'founder'}
+                by @{getUsername(founder)}
               </button>
               {user && pitch.founder_id !== user.id && (
                 <button
@@ -439,7 +469,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
             <div className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all ${hasUpvoted ? 'bg-[#34D399]/20' : 'bg-black/50 hover:bg-black/70'}`}>
               <ArrowUp className="w-6 h-6" style={{ color: hasUpvoted ? '#34D399' : 'white', fill: hasUpvoted ? '#34D399' : 'none' }} />
             </div>
-            <span className="text-white text-[12px] font-semibold mt-1">{pitch.upvote_count || 0}</span>
+            <span className="text-white text-[12px] font-semibold mt-1">{localUpvoteCount}</span>
           </button>
 
           <button onClick={handleComment} className="flex flex-col items-center">
@@ -453,8 +483,9 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
             <Share2 className="w-6 h-6 text-white" />
           </button>
 
-          <button onClick={handleBookmark} className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all ${hasBookmarked ? 'bg-[#6366F1]/20' : 'bg-black/50 hover:bg-black/70'}`}>
-            <Bookmark className="w-6 h-6" style={{ color: hasBookmarked ? '#6366F1' : 'white', fill: hasBookmarked ? '#6366F1' : 'none' }} />
+          {/* FIXED: Bookmark fills white when bookmarked */}
+          <button onClick={handleBookmark} className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all ${hasBookmarked ? 'bg-white/20' : 'bg-black/50 hover:bg-black/70'}`}>
+            <Bookmark className="w-6 h-6 text-white" fill={hasBookmarked ? 'white' : 'none'} />
           </button>
         </div>
 
@@ -618,13 +649,13 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
                 >
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden">
                     {founder.avatar_url ? (
-                      <img src={founder.avatar_url} alt={founder.display_name} className="w-full h-full object-cover" />
+                      <img src={founder.avatar_url} alt={getDisplayName(founder)} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-white font-bold">{(founder.display_name || founder.username)?.[0]?.toUpperCase()}</span>
+                      <span className="text-white font-bold">{getDisplayName(founder)[0]?.toUpperCase()}</span>
                     )}
                   </div>
                   <div className="text-left">
-                    <div className="text-white font-semibold">{founder.display_name || founder.full_name || 'Founder'}</div>
+                    <div className="text-white font-semibold">{getDisplayName(founder)}</div>
                     {founder.username && <div className="text-[#8E8E93] text-[13px]">@{founder.username}</div>}
                   </div>
                 </button>
@@ -655,11 +686,11 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
                         {commenter?.avatar_url ? (
                           <img src={commenter.avatar_url} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <span>{(commenter?.display_name || commenter?.full_name || commenter?.email)?.[0]?.toUpperCase()}</span>
+                          <span>{getDisplayName(commenter)[0]?.toUpperCase()}</span>
                         )}
                       </div>
                       <div className="flex-1">
-                        <div className="text-white font-semibold text-sm mb-1">{commenter?.display_name || commenter?.full_name || 'User'}</div>
+                        <div className="text-white font-semibold text-sm mb-1">{getDisplayName(commenter)}</div>
                         <div className="text-[#A1A1AA] text-sm">{comment.content}</div>
                       </div>
                     </div>

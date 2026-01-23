@@ -40,13 +40,30 @@ const clearDraft = () => {
   localStorage.removeItem('firstlook_pitch_draft');
 };
 
+// Streamlined step names for clarity
+const STEPS = {
+  INFO: 1,
+  PITCH_INSTRUCTIONS: 2,
+  PITCH_RECORD: 3,
+  PITCH_PREVIEW: 4,
+  PITCH_EDIT: 4.5,
+  DEMO_OPTION: 5,
+  DEMO_INSTRUCTIONS: 6,
+  DEMO_RECORD: 7,
+  DEMO_PREVIEW: 8,
+  DEMO_EDIT: 8.5,
+  FINAL_REVIEW: 9,
+  UPLOADING: 10,
+  SUCCESS: 11
+};
+
 export default function RecordPitch() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(STEPS.INFO);
   const [formData, setFormData] = useState(null);
   const [pitchBlob, setPitchBlob] = useState(null);
   const [demoBlob, setDemoBlob] = useState(null);
-  const [recordingType, setRecordingType] = useState('video');
+  const [recordingType, setRecordingType] = useState('screen'); // Default to screen recording for demo
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState('');
   const [submittedPitchId, setSubmittedPitchId] = useState(null);
@@ -54,8 +71,9 @@ export default function RecordPitch() {
   const [showDraftPrompt, setShowDraftPrompt] = useState(false);
   const [isUploadedPitch, setIsUploadedPitch] = useState(false);
 
+  // Check for draft on mount
   useEffect(() => {
-    if (step === 1 && hasValidDraft()) {
+    if (step === STEPS.INFO && hasValidDraft()) {
       try {
         const draft = localStorage.getItem(DRAFT_KEY) || localStorage.getItem('firstlook_pitch_draft');
         const parsed = JSON.parse(draft);
@@ -67,13 +85,16 @@ export default function RecordPitch() {
     }
   }, [step]);
 
+  // STEP 1: Form submission
   const handleFormSubmit = (data) => {
     setFormData(data);
     setIsUploadedPitch(false);
-    const hidePitchInstructions = localStorage.getItem('hidePitchInstructions');
-    setStep(hidePitchInstructions === 'true' ? 3 : 2);
+    // Skip instructions if user has seen them before
+    const skipInstructions = localStorage.getItem('hidePitchInstructions') === 'true';
+    setStep(skipInstructions ? STEPS.PITCH_RECORD : STEPS.PITCH_INSTRUCTIONS);
   };
 
+  // Handle uploaded pitch (file upload instead of recording)
   const handleUploadPitch = async (blob, data) => {
     setUploadStage('Validating video...');
     const validation = await validateVideoBlob(blob);
@@ -86,11 +107,13 @@ export default function RecordPitch() {
     setFormData(data);
     setPitchBlob(blob);
     setIsUploadedPitch(true);
-    setStep(4);
+    setStep(STEPS.PITCH_PREVIEW);
   };
 
-  const handleStartPitchRecording = () => setStep(3);
+  // STEP 2: Start recording
+  const handleStartPitchRecording = () => setStep(STEPS.PITCH_RECORD);
 
+  // STEP 3: Recording complete
   const handlePitchRecordingComplete = async (blob) => {
     const validation = await validateVideoBlob(blob);
     if (!validation.valid) {
@@ -98,40 +121,51 @@ export default function RecordPitch() {
       return;
     }
     setPitchBlob(blob);
-    setStep(4);
+    setStep(STEPS.PITCH_PREVIEW);
   };
 
-  const handlePitchPreviewContinue = () => setStep(4.5);
+  // STEP 4: Preview -> Edit or Demo
+  const handlePitchPreviewContinue = () => setStep(STEPS.PITCH_EDIT);
 
+  // STEP 4.5: Edit complete -> Demo options
   const handlePitchEditComplete = (editedBlob) => {
     setPitchBlob(editedBlob);
-    setStep(4.7);
+    setStep(STEPS.DEMO_OPTION);
   };
 
+  // Re-record pitch
   const handlePitchReRecord = () => {
     setPitchBlob(null);
     if (isUploadedPitch) {
-      setStep(1);
+      setStep(STEPS.INFO);
       setIsUploadedPitch(false);
     } else {
-      setStep(3);
+      setStep(STEPS.PITCH_RECORD);
     }
   };
 
+  // STEP 5: Demo options
   const handleRecordDemoChoice = (type) => {
-    setRecordingType(type);
-    const hideDemoInstructions = localStorage.getItem('hideDemoInstructions');
-    setStep(hideDemoInstructions === 'true' ? 6 : 5);
+    setRecordingType(type || 'screen');
+    // Skip instructions if user has seen them
+    const skipInstructions = localStorage.getItem('hideDemoInstructions') === 'true';
+    setStep(skipInstructions ? STEPS.DEMO_RECORD : STEPS.DEMO_INSTRUCTIONS);
   };
 
-  const handleUploadDemoChoice = () => setStep(5);
-  const handleSkipDemo = () => { setDemoBlob(null); setStep(9); };
+  const handleUploadDemoChoice = () => setStep(STEPS.DEMO_INSTRUCTIONS);
+  
+  const handleSkipDemo = () => { 
+    setDemoBlob(null); 
+    setStep(STEPS.FINAL_REVIEW); 
+  };
 
+  // STEP 6: Demo instructions -> record
   const handleStartDemoRecording = (type) => {
-    setRecordingType(type);
-    setStep(6);
+    setRecordingType(type || 'screen');
+    setStep(STEPS.DEMO_RECORD);
   };
 
+  // STEP 7: Demo recording complete
   const handleDemoRecordingComplete = async (blob) => {
     const validation = await validateVideoBlob(blob);
     if (!validation.valid) {
@@ -139,9 +173,10 @@ export default function RecordPitch() {
       return;
     }
     setDemoBlob(blob);
-    setStep(7);
+    setStep(STEPS.DEMO_PREVIEW);
   };
 
+  // Handle demo upload (file instead of recording)
   const handleDemoUploadComplete = async (blob) => {
     const validation = await validateVideoBlob(blob);
     if (!validation.valid) {
@@ -149,19 +184,25 @@ export default function RecordPitch() {
       return;
     }
     setDemoBlob(blob);
-    setStep(7);
+    setStep(STEPS.DEMO_PREVIEW);
   };
 
-  const handleDemoPreviewContinue = () => setStep(8);
-  const handleDemoReRecord = () => { setDemoBlob(null); setStep(6); };
+  // STEP 8: Demo preview
+  const handleDemoPreviewContinue = () => setStep(STEPS.DEMO_EDIT);
+  const handleDemoReRecord = () => { 
+    setDemoBlob(null); 
+    setStep(STEPS.DEMO_RECORD); 
+  };
 
+  // STEP 8.5: Demo edit complete
   const handleDemoEditComplete = (editedBlob) => {
     setDemoBlob(editedBlob);
-    setStep(9);
+    setStep(STEPS.FINAL_REVIEW);
   };
 
+  // STEP 9: Final submit
   const handleFinalSubmit = async () => {
-    setStep(10);
+    setStep(STEPS.UPLOADING);
     
     try {
       setUploadStage('Preparing...');
@@ -188,6 +229,7 @@ export default function RecordPitch() {
         demoFile = new File([demoBlob], 'demo.mp4', { type: 'video/mp4' });
       }
       
+      // Compress if needed
       if (pitchSizeMB > 45) {
         setUploadStage('Compressing pitch video...');
         const result = await compressVideo(pitchBlob, 45);
@@ -208,7 +250,7 @@ export default function RecordPitch() {
       }
       
       setUploadProgress(20);
-      setUploadStage('Uploading videos...');
+      setUploadStage('Uploading pitch video...');
       
       // Upload pitch video
       const pitchUpload = await uploadVideo(pitchFile, 'pitches');
@@ -217,6 +259,7 @@ export default function RecordPitch() {
       // Upload demo if exists
       let demoUpload = null;
       if (demoFile) {
+        setUploadStage('Uploading demo video...');
         demoUpload = await uploadVideo(demoFile, 'demos');
         setUploadProgress(55);
       }
@@ -242,9 +285,9 @@ export default function RecordPitch() {
       }
       setUploadProgress(70);
       
-      setUploadStage('Creating pitch...');
+      setUploadStage('Creating your pitch...');
       
-      // Create startup record with all new fields
+      // Create startup record
       const { data: startup, error: startupError } = await supabase
         .from('startups')
         .insert({
@@ -285,7 +328,7 @@ export default function RecordPitch() {
       setSubmittedPitchId(startup.id);
 
       clearDraft();
-      setStep(11);
+      setStep(STEPS.SUCCESS);
       
     } catch (err) {
       console.error('Upload failed:', err);
@@ -294,12 +337,14 @@ export default function RecordPitch() {
         message: err.message || 'Please check your connection and try again.',
         retry: true
       });
-      setStep(9);
+      setStep(STEPS.FINAL_REVIEW);
     }
   };
 
+  // Navigation helpers
   const handleBack = (targetStep) => setStep(targetStep);
 
+  // Error screen
   if (error) {
     return (
       <div className="min-h-screen bg-[#09090B] flex items-center justify-center p-6">
@@ -308,11 +353,17 @@ export default function RecordPitch() {
           <p className="text-[14px] text-[#A1A1AA] mb-6">{error.message}</p>
           <div className="flex gap-3">
             {error.retry && (
-              <button onClick={() => { setError(null); handleFinalSubmit(); }} className="flex-1 py-3 bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition">
+              <button 
+                onClick={() => { setError(null); handleFinalSubmit(); }} 
+                className="flex-1 py-3 bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition"
+              >
                 Try Again
               </button>
             )}
-            <button onClick={() => { setError(null); navigate(createPageUrl('Explore')); }} className="flex-1 py-3 bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-white font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition">
+            <button 
+              onClick={() => { setError(null); navigate(createPageUrl('Explore')); }} 
+              className="flex-1 py-3 bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-white font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition"
+            >
               Exit
             </button>
           </div>
@@ -321,12 +372,15 @@ export default function RecordPitch() {
     );
   }
 
-  if (showDraftPrompt && step === 1) {
+  // Draft prompt
+  if (showDraftPrompt && step === STEPS.INFO) {
     return (
       <div className="min-h-screen bg-[#09090B] flex items-center justify-center p-6">
         <div className="bg-[#18181B] border border-[#27272A] rounded-2xl p-8 max-w-md w-full">
           <h3 className="text-white text-[20px] font-bold mb-3">Continue where you left off?</h3>
-          <p className="text-[#A1A1AA] text-[14px] mb-4">You have an unfinished pitch for "{formData?.startup_name || 'Untitled'}"</p>
+          <p className="text-[#A1A1AA] text-[14px] mb-4">
+            You have an unfinished pitch for "{formData?.startup_name || 'Untitled'}"
+          </p>
           
           <div className="p-4 bg-[#09090B] border border-[#27272A] rounded-lg mb-6">
             {formData?.startup_name && (
@@ -344,10 +398,16 @@ export default function RecordPitch() {
           </div>
           
           <div className="flex gap-3">
-            <button onClick={() => { clearDraft(); setFormData(null); setShowDraftPrompt(false); }} className="flex-1 px-6 py-3 bg-[#27272A] text-white text-[14px] font-semibold rounded-xl hover:bg-[#3A3A3D] transition">
+            <button 
+              onClick={() => { clearDraft(); setFormData(null); setShowDraftPrompt(false); }} 
+              className="flex-1 px-6 py-3 bg-[#27272A] text-white text-[14px] font-semibold rounded-xl hover:bg-[#3A3A3D] transition"
+            >
               Start Fresh
             </button>
-            <button onClick={() => setShowDraftPrompt(false)} className="flex-1 px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-xl hover:brightness-110 transition">
+            <button 
+              onClick={() => setShowDraftPrompt(false)} 
+              className="flex-1 px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-xl hover:brightness-110 transition"
+            >
               Continue
             </button>
           </div>
@@ -356,33 +416,122 @@ export default function RecordPitch() {
     );
   }
 
+  // Main step router
   switch (step) {
-    case 1:
-      return <PitchInfoForm initialData={formData} onSubmit={handleFormSubmit} onUploadPitch={handleUploadPitch} onBack={() => navigate(createPageUrl('Explore'))} />;
-    case 2:
-      return <PitchInstructionsScreen onStart={handleStartPitchRecording} onBack={() => handleBack(1)} onSkip={null} />;
-    case 3:
-      return <PitchRecordingScreen onComplete={handlePitchRecordingComplete} onBack={() => handleBack(2)} formData={formData} />;
-    case 4:
-      return <PitchPreviewScreen videoBlob={pitchBlob} onContinue={handlePitchPreviewContinue} onReRecord={handlePitchReRecord} onBack={() => handleBack(isUploadedPitch ? 1 : 3)} />;
-    case 4.5:
-      return <PitchEditScreen videoBlob={pitchBlob} onComplete={handlePitchEditComplete} onBack={() => handleBack(4)} />;
-    case 4.7:
-      return <DemoOptionScreen onRecordDemo={handleRecordDemoChoice} onUploadDemo={handleUploadDemoChoice} onSkipDemo={handleSkipDemo} onBack={() => handleBack(4.5)} />;
-    case 5:
-      return <DemoInstructionsScreen onStart={handleStartDemoRecording} onBack={() => handleBack(4)} onUploadDemo={handleDemoUploadComplete} />;
-    case 6:
-      return <DemoRecordingScreen recordingType={recordingType} onComplete={handleDemoRecordingComplete} onBack={() => handleBack(5)} />;
-    case 7:
-      return <DemoPreviewScreen videoBlob={demoBlob} onContinue={handleDemoPreviewContinue} onReRecord={handleDemoReRecord} onBack={() => handleBack(6)} />;
-    case 8:
-      return <DemoEditScreen videoBlob={demoBlob} onComplete={handleDemoEditComplete} onBack={() => handleBack(7)} />;
-    case 9:
-      return <FinalReviewScreen formData={formData} pitchBlob={pitchBlob} demoBlob={demoBlob} onSubmit={handleFinalSubmit} onReRecordPitch={() => handleBack(isUploadedPitch ? 1 : 3)} onReRecordDemo={() => handleBack(demoBlob ? 8 : 4.7)} onSkipDemo={handleSkipDemo} onBack={() => handleBack(demoBlob ? 8 : 4.7)} />;
-    case 10:
+    case STEPS.INFO:
+      return (
+        <PitchInfoForm 
+          initialData={formData} 
+          onSubmit={handleFormSubmit} 
+          onUploadPitch={handleUploadPitch} 
+          onBack={() => navigate(createPageUrl('Explore'))} 
+        />
+      );
+    
+    case STEPS.PITCH_INSTRUCTIONS:
+      return (
+        <PitchInstructionsScreen 
+          onStart={handleStartPitchRecording} 
+          onBack={() => handleBack(STEPS.INFO)} 
+          onSkip={handleStartPitchRecording} 
+        />
+      );
+    
+    case STEPS.PITCH_RECORD:
+      return (
+        <PitchRecordingScreen 
+          onComplete={handlePitchRecordingComplete} 
+          onBack={() => handleBack(STEPS.PITCH_INSTRUCTIONS)} 
+          formData={formData} 
+        />
+      );
+    
+    case STEPS.PITCH_PREVIEW:
+      return (
+        <PitchPreviewScreen 
+          videoBlob={pitchBlob} 
+          onContinue={handlePitchPreviewContinue} 
+          onReRecord={handlePitchReRecord} 
+          onBack={() => handleBack(isUploadedPitch ? STEPS.INFO : STEPS.PITCH_RECORD)} 
+        />
+      );
+    
+    case STEPS.PITCH_EDIT:
+      return (
+        <PitchEditScreen 
+          videoBlob={pitchBlob} 
+          onComplete={handlePitchEditComplete} 
+          onBack={() => handleBack(STEPS.PITCH_PREVIEW)} 
+        />
+      );
+    
+    case STEPS.DEMO_OPTION:
+      return (
+        <DemoOptionScreen 
+          onRecordDemo={handleRecordDemoChoice} 
+          onUploadDemo={handleUploadDemoChoice} 
+          onSkipDemo={handleSkipDemo} 
+          onBack={() => handleBack(STEPS.PITCH_EDIT)} 
+        />
+      );
+    
+    case STEPS.DEMO_INSTRUCTIONS:
+      return (
+        <DemoInstructionsScreen 
+          onStart={handleStartDemoRecording} 
+          onBack={() => handleBack(STEPS.DEMO_OPTION)} 
+          onUploadDemo={handleDemoUploadComplete} 
+        />
+      );
+    
+    case STEPS.DEMO_RECORD:
+      return (
+        <DemoRecordingScreen 
+          recordingType={recordingType} 
+          onComplete={handleDemoRecordingComplete} 
+          onBack={() => handleBack(STEPS.DEMO_INSTRUCTIONS)} 
+        />
+      );
+    
+    case STEPS.DEMO_PREVIEW:
+      return (
+        <DemoPreviewScreen 
+          videoBlob={demoBlob} 
+          onContinue={handleDemoPreviewContinue} 
+          onReRecord={handleDemoReRecord} 
+          onBack={() => handleBack(STEPS.DEMO_RECORD)} 
+        />
+      );
+    
+    case STEPS.DEMO_EDIT:
+      return (
+        <DemoEditScreen 
+          videoBlob={demoBlob} 
+          onComplete={handleDemoEditComplete} 
+          onBack={() => handleBack(STEPS.DEMO_PREVIEW)} 
+        />
+      );
+    
+    case STEPS.FINAL_REVIEW:
+      return (
+        <FinalReviewScreen 
+          formData={formData} 
+          pitchBlob={pitchBlob} 
+          demoBlob={demoBlob} 
+          onSubmit={handleFinalSubmit} 
+          onReRecordPitch={() => handleBack(isUploadedPitch ? STEPS.INFO : STEPS.PITCH_RECORD)} 
+          onReRecordDemo={() => handleBack(demoBlob ? STEPS.DEMO_EDIT : STEPS.DEMO_OPTION)} 
+          onSkipDemo={handleSkipDemo} 
+          onBack={() => handleBack(demoBlob ? STEPS.DEMO_EDIT : STEPS.DEMO_OPTION)} 
+        />
+      );
+    
+    case STEPS.UPLOADING:
       return <UploadProgress progress={uploadProgress} stage={uploadStage} />;
-    case 11:
+    
+    case STEPS.SUCCESS:
       return <SuccessScreen pitchId={submittedPitchId} />;
+    
     default:
       return null;
   }

@@ -56,7 +56,6 @@ export default function ChannelDetail() {
     setIsLoading(true);
     
     try {
-      // Simple query first - no joins
       let query = supabase
         .from('discussions')
         .select('*')
@@ -74,23 +73,30 @@ export default function ChannelDetail() {
         console.error('Error fetching discussions:', error);
         setDiscussions([]);
       } else {
-        console.log('Fetched discussions:', data);
-        
-        // Now fetch profiles separately for each discussion
         if (data && data.length > 0) {
-          const userIds = [...new Set(data.map(d => d.user_id))];
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, display_name, username, avatar_url')
-            .in('id', userIds);
+          // Get unique user IDs, filter out any null/undefined
+          const userIds = [...new Set(data.map(d => d.user_id).filter(Boolean))];
           
-          // Attach profiles to discussions
-          const discussionsWithProfiles = data.map(d => ({
-            ...d,
-            profiles: profiles?.find(p => p.id === d.user_id) || null
-          }));
-          
-          setDiscussions(discussionsWithProfiles);
+          if (userIds.length > 0) {
+            const { data: profiles, error: profileError } = await supabase
+              .from('profiles')
+              .select('id, display_name, username, avatar_url')
+              .in('id', userIds);
+            
+            if (profileError) {
+              console.error('Error fetching profiles:', profileError);
+            }
+            
+            // Attach profiles to discussions
+            const discussionsWithProfiles = data.map(d => ({
+              ...d,
+              profiles: profiles?.find(p => p.id === d.user_id) || null
+            }));
+            
+            setDiscussions(discussionsWithProfiles);
+          } else {
+            setDiscussions(data);
+          }
         } else {
           setDiscussions([]);
         }
@@ -167,6 +173,18 @@ export default function ChannelDetail() {
     return <div className="min-h-screen bg-black flex items-center justify-center text-white">Channel not found</div>;
   }
 
+  // Helper to get display name from discussion
+  const getDisplayName = (discussion) => {
+    if (discussion.profiles?.display_name) return discussion.profiles.display_name;
+    if (discussion.profiles?.username) return discussion.profiles.username;
+    return 'Anonymous';
+  };
+
+  const getAvatarLetter = (discussion) => {
+    const name = getDisplayName(discussion);
+    return name[0].toUpperCase();
+  };
+
   return (
     <div className="min-h-screen bg-black pb-24">
       <div className="sticky top-0 z-40 bg-black/95 backdrop-blur-lg border-b border-white/10">
@@ -238,13 +256,13 @@ export default function ChannelDetail() {
                       {discussion.profiles?.avatar_url ? (
                         <img src={discussion.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-white font-bold">{(discussion.profiles?.display_name || 'U')[0].toUpperCase()}</span>
+                        <span className="text-white font-bold">{getAvatarLetter(discussion)}</span>
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-white font-semibold text-sm">{discussion.profiles?.display_name || discussion.profiles?.username || 'User'}</span>
+                        <span className="text-white font-semibold text-sm">{getDisplayName(discussion)}</span>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium text-white ${typeConfig.color}`}>{discussion.type}</span>
                         <span className="text-gray-500 text-xs">{formatTimeAgo(discussion.created_at)}</span>
                       </div>
@@ -333,22 +351,54 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
   const [replyingTo, setReplyingTo] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Helper to get display name from reply
+  const getDisplayName = (reply) => {
+    if (reply.profiles?.display_name) return reply.profiles.display_name;
+    if (reply.profiles?.username) return reply.profiles.username;
+    return 'Anonymous';
+  };
+
+  const getAvatarLetter = (reply) => {
+    const name = getDisplayName(reply);
+    return name[0].toUpperCase();
+  };
+
   const fetchReplies = async () => {
     setIsLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('discussion_replies')
       .select('*')
       .eq('discussion_id', discussionId)
       .order('created_at', { ascending: true });
     
+    if (error) {
+      console.error('Error fetching replies:', error);
+      setReplies([]);
+      setIsLoading(false);
+      return;
+    }
+    
     if (data && data.length > 0) {
-      const userIds = [...new Set(data.map(r => r.user_id))];
-      const { data: profiles } = await supabase.from('profiles').select('id, display_name, username, avatar_url').in('id', userIds);
-      const repliesWithProfiles = data.map(r => ({
-        ...r,
-        profiles: profiles?.find(p => p.id === r.user_id) || null
-      }));
-      setReplies(repliesWithProfiles);
+      const userIds = [...new Set(data.map(r => r.user_id).filter(Boolean))];
+      
+      if (userIds.length > 0) {
+        const { data: profiles, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, display_name, username, avatar_url')
+          .in('id', userIds);
+        
+        if (profileError) {
+          console.error('Error fetching reply profiles:', profileError);
+        }
+        
+        const repliesWithProfiles = data.map(r => ({
+          ...r,
+          profiles: profiles?.find(p => p.id === r.user_id) || null
+        }));
+        setReplies(repliesWithProfiles);
+      } else {
+        setReplies(data);
+      }
     } else {
       setReplies([]);
     }
@@ -413,12 +463,12 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
                   {reply.profiles?.avatar_url ? (
                     <img src={reply.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <span className="text-white text-xs font-bold">{(reply.profiles?.display_name || 'U')[0].toUpperCase()}</span>
+                    <span className="text-white text-xs font-bold">{getAvatarLetter(reply)}</span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-white font-medium text-sm">{reply.profiles?.display_name || reply.profiles?.username || 'User'}</span>
+                    <span className="text-white font-medium text-sm">{getDisplayName(reply)}</span>
                     <span className="text-gray-500 text-xs">{formatTimeAgo(reply.created_at)}</span>
                   </div>
                   <p className="text-gray-300 text-sm whitespace-pre-wrap">{reply.content}</p>
