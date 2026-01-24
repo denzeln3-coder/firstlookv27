@@ -283,7 +283,7 @@ const functions = {
   }
 };
 
-// Main db object that mimics base44
+// Main db object that provides entity helpers
 const db = {
   auth,
   entities: entitiesProxy,

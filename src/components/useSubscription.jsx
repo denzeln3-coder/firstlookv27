@@ -1,15 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 
 export function useSubscription() {
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      try {
-        return await base44.auth.me();
-      } catch {
-        return null;
-      }
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+      const { data: profile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+      return { ...authUser, ...profile };
     }
   });
 
@@ -17,24 +16,18 @@ export function useSubscription() {
     queryKey: ['subscription', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      try {
-        const subscriptions = await base44.entities.Subscription.filter({ user_id: user.id });
-        if (subscriptions.length > 0) {
-          const sub = subscriptions[0];
-          if (sub.expires_at && new Date(sub.expires_at) < new Date()) {
-            return { ...sub, tier: 'free', is_active: false };
-          }
-          return sub;
+      const { data } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).single();
+      if (data) {
+        if (data.expires_at && new Date(data.expires_at) < new Date()) {
+          return { ...data, tier: 'free', is_active: false };
         }
-        return null;
-      } catch {
-        return null;
+        return data;
       }
+      return null;
     },
     enabled: !!user?.id
   });
 
-  // Admins automatically get executive access to all features
   const isAdmin = user?.role === 'admin';
   const tier = isAdmin ? 'executive' : (subscription?.tier || 'free');
   const isActive = isAdmin ? true : (subscription?.is_active !== false);

@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 
 class ErrorLogger {
   constructor() {
@@ -19,38 +19,18 @@ class ErrorLogger {
       }
     };
 
-    // Store locally
     this.errors.push(errorData);
-    if (this.errors.length > this.maxErrors) {
-      this.errors.shift();
-    }
+    if (this.errors.length > this.maxErrors) this.errors.shift();
 
-    // Log to console in development
     console.error('[ErrorLogger]', errorData);
 
-    // Send to backend for critical errors
     if (this.isCritical(context.severity)) {
       try {
-        const user = await base44.auth.me().catch(() => null);
-        await base44.integrations.Core.SendEmail({
-          to: 'errors@firstlook.app',
-          subject: `Critical Error: ${context.component || 'Unknown'}`,
-          body: `
-            Error: ${errorData.message}
-            
-            User: ${user?.email || 'Anonymous'}
-            Component: ${context.component || 'Unknown'}
-            Action: ${context.action || 'Unknown'}
-            
-            Stack:
-            ${errorData.stack}
-            
-            Context:
-            ${JSON.stringify(errorData.context, null, 2)}
-          `
-        }).catch(() => {});
+        const { data: { user } } = await supabase.auth.getUser();
+        // Log to console for now - email sending can be added via Supabase Edge Functions
+        console.error('[Critical Error]', { user: user?.email, ...errorData });
       } catch (e) {
-        // Silent fail for error logging
+        // Silent fail
       }
     }
 
@@ -69,57 +49,30 @@ class ErrorLogger {
     this.errors = [];
   }
 
-  // Specialized logging methods
   logRecordingError(error, stage) {
-    return this.log(error, {
-      component: 'Recording',
-      action: stage,
-      severity: 'high'
-    });
+    return this.log(error, { component: 'Recording', action: stage, severity: 'high' });
   }
 
   logUploadError(error, fileSize) {
-    return this.log(error, {
-      component: 'Upload',
-      action: 'uploadVideo',
-      severity: 'critical',
-      fileSize
-    });
+    return this.log(error, { component: 'Upload', action: 'uploadVideo', severity: 'critical', fileSize });
   }
 
   logProcessingError(error, operation) {
-    return this.log(error, {
-      component: 'VideoProcessing',
-      action: operation,
-      severity: 'high'
-    });
+    return this.log(error, { component: 'VideoProcessing', action: operation, severity: 'high' });
   }
 
   logAuthError(error) {
-    return this.log(error, {
-      component: 'Auth',
-      severity: 'medium'
-    });
+    return this.log(error, { component: 'Auth', severity: 'medium' });
   }
 }
 
 export const errorLogger = new ErrorLogger();
 
-// Setup global error handlers
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (event) => {
-    errorLogger.log(event.error, {
-      component: 'Global',
-      action: 'uncaughtError',
-      severity: 'high'
-    });
+    errorLogger.log(event.error, { component: 'Global', action: 'uncaughtError', severity: 'high' });
   });
-
   window.addEventListener('unhandledrejection', (event) => {
-    errorLogger.log(new Error(event.reason), {
-      component: 'Global',
-      action: 'unhandledPromise',
-      severity: 'high'
-    });
+    errorLogger.log(new Error(event.reason), { component: 'Global', action: 'unhandledPromise', severity: 'high' });
   });
 }

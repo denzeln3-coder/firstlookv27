@@ -2,8 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, User, Bell, Lock, Palette, HelpCircle, LogOut, ChevronRight, Moon, Sun, Trash2, TrendingUp } from 'lucide-react';
+import { 
+  ArrowLeft, User, Bell, Lock, HelpCircle, LogOut, ChevronRight, 
+  Trash2, TrendingUp, Video, Search, Check, Loader2 
+} from 'lucide-react';
 import { toast } from 'sonner';
+
+const USER_TYPE_OPTIONS = [
+  { id: 'founder', label: 'Founder', icon: Video, description: 'Post pitches and demos', color: 'from-[#6366F1] to-[#8B5CF6]' },
+  { id: 'hunter', label: 'Hunter', icon: Search, description: 'Discover startups', color: 'from-[#F59E0B] to-[#EF4444]' },
+  { id: 'investor', label: 'Investor', icon: TrendingUp, description: 'Access deal flow', color: 'from-[#10B981] to-[#059669]' },
+];
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -12,15 +21,20 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState({ email: true, push: true, messages: true, updates: false });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showUserTypeModal, setShowUserTypeModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingUserType, setSavingUserType] = useState(false);
+  const [selectedUserType, setSelectedUserType] = useState(null);
 
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUser(user);
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        // Use 'users' table instead of 'profiles'
+        const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
         setProfile(profile);
+        setSelectedUserType(profile?.user_type || null);
       } else {
         navigate('/Login');
       }
@@ -37,9 +51,8 @@ export default function Settings() {
   const handleDeleteAccount = async () => {
     setDeleting(true);
     try {
-      // Delete user data
       await supabase.from('startups').delete().eq('founder_id', user.id);
-      await supabase.from('profiles').delete().eq('id', user.id);
+      await supabase.from('users').delete().eq('id', user.id);
       await supabase.auth.signOut();
       toast.success('Account deleted');
       navigate('/Login');
@@ -49,12 +62,52 @@ export default function Settings() {
     setDeleting(false);
   };
 
+  const handleUserTypeChange = async (newType) => {
+    setSavingUserType(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ user_type: newType })
+        .eq('id', user.id);
+      
+      if (error) throw error;
+      
+      setProfile(prev => ({ ...prev, user_type: newType }));
+      setSelectedUserType(newType);
+      setShowUserTypeModal(false);
+      toast.success(`Switched to ${newType} mode`);
+      
+      // Navigate to appropriate page based on user type
+      if (newType === 'investor') {
+        navigate(createPageUrl('InvestorDashboard'));
+      } else if (newType === 'founder') {
+        // Stay on settings or go to profile
+      }
+    } catch (err) {
+      console.error('Error updating user type:', err);
+      toast.error('Failed to update. Please try again.');
+    }
+    setSavingUserType(false);
+  };
+
+  const currentTypeOption = USER_TYPE_OPTIONS.find(opt => opt.id === profile?.user_type);
+
   const settingsSections = [
     {
       title: 'Account',
       items: [
         { icon: User, label: 'Edit Profile', onClick: () => navigate(createPageUrl('EditProfile')) },
-        { icon: TrendingUp, label: 'Investor Dashboard', onClick: () => navigate(createPageUrl('InvestorDashboard')) },
+        { 
+          icon: currentTypeOption?.icon || User, 
+          label: 'User Type', 
+          value: currentTypeOption?.label || 'Not set',
+          onClick: () => setShowUserTypeModal(true),
+          highlight: !profile?.user_type
+        },
+        // Only show Investor Dashboard if user is an investor
+        ...(profile?.user_type === 'investor' ? [
+          { icon: TrendingUp, label: 'Investor Dashboard', onClick: () => navigate(createPageUrl('InvestorDashboard')) }
+        ] : []),
         { icon: Lock, label: 'Privacy', onClick: () => toast.info('Coming soon') },
       ]
     },
@@ -114,6 +167,12 @@ export default function Settings() {
           <div>
             <h2 className="text-white font-semibold text-lg">{profile?.display_name || 'User'}</h2>
             <p className="text-gray-500 text-sm">{user?.email}</p>
+            {profile?.user_type && (
+              <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r ${currentTypeOption?.color} text-white`}>
+                {currentTypeOption?.icon && <currentTypeOption.icon className="w-3 h-3" />}
+                {currentTypeOption?.label}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -144,13 +203,18 @@ export default function Settings() {
                     ) : (
                       <button
                         onClick={item.onClick}
-                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition ${item.danger ? 'text-red-500' : 'text-white'}`}
+                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition ${item.danger ? 'text-red-500' : 'text-white'} ${item.highlight ? 'bg-[#6366F1]/10' : ''}`}
                       >
                         <div className="flex items-center gap-3">
                           <Icon className={`w-5 h-5 ${item.danger ? 'text-red-500' : 'text-gray-400'}`} />
                           <span>{item.label}</span>
                         </div>
-                        <ChevronRight className="w-5 h-5 text-gray-600" />
+                        <div className="flex items-center gap-2">
+                          {item.value && (
+                            <span className="text-[#8E8E93] text-sm">{item.value}</span>
+                          )}
+                          <ChevronRight className="w-5 h-5 text-gray-600" />
+                        </div>
                       </button>
                     )}
                     {itemIdx < section.items.length - 1 && <div className="h-px bg-white/10 ml-12" />}
@@ -173,6 +237,76 @@ export default function Settings() {
         {/* Version */}
         <p className="text-center text-gray-600 text-sm">FirstLook v1.0.0</p>
       </div>
+
+      {/* User Type Modal */}
+      {showUserTypeModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowUserTypeModal(false)}>
+          <div className="bg-[#1C1C1E] rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-white text-xl font-bold mb-2">Change User Type</h2>
+            <p className="text-gray-400 text-sm mb-6">Select how you want to use FirstLook. This affects which features you can access.</p>
+            
+            <div className="space-y-3 mb-6">
+              {USER_TYPE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const isSelected = selectedUserType === option.id;
+                const isCurrent = profile?.user_type === option.id;
+                
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => setSelectedUserType(option.id)}
+                    disabled={savingUserType}
+                    className={`w-full p-4 rounded-xl border-2 transition-all text-left flex items-center gap-4 ${
+                      isSelected 
+                        ? 'border-[#6366F1] bg-[#6366F1]/10' 
+                        : 'border-[#27272A] hover:border-[#3F3F46]'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${option.color} flex items-center justify-center`}>
+                      <Icon className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-semibold">{option.label}</span>
+                        {isCurrent && (
+                          <span className="px-2 py-0.5 bg-[#6366F1]/20 text-[#6366F1] text-xs rounded-full">Current</span>
+                        )}
+                      </div>
+                      <span className="text-gray-400 text-sm">{option.description}</span>
+                    </div>
+                    {isSelected && (
+                      <Check className="w-5 h-5 text-[#6366F1]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowUserTypeModal(false)}
+                className="flex-1 py-3 bg-[#2C2C2E] text-white rounded-xl font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleUserTypeChange(selectedUserType)}
+                disabled={savingUserType || selectedUserType === profile?.user_type}
+                className="flex-1 py-3 bg-[#6366F1] text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingUserType ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Account Modal */}
       {showDeleteModal && (

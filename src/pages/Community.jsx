@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, Users, MapPin, Calendar, Plus, MessageCircle, ChevronRight, Search, Video, Clock, X, Hash, Check, ExternalLink, Share2 } from 'lucide-react';
+import { ArrowLeft, Users, MapPin, Calendar, Plus, MessageCircle, ChevronRight, Search, Video, Clock, X, Hash, Check, ExternalLink, Share2, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CHANNEL_ICONS = ['💬', '🚀', '💡', '🎯', '🔥', '⚡', '🌟', '💎', '🎨', '🛠️', '📱', '🤖', '💰', '📈', '🎮', '🏥', '🌍', '📚'];
@@ -385,6 +385,91 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
   const eventDate = new Date(meetup.event_date);
   const isFull = meetup.attendee_count >= meetup.max_attendees;
   const isHost = user?.id === meetup.host_id;
+  
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  // Fetch comments when expanded
+  useEffect(() => {
+    if (showComments && meetup.id) {
+      fetchComments();
+    }
+  }, [showComments, meetup.id]);
+
+  const fetchComments = async () => {
+    setLoadingComments(true);
+    try {
+      const { data, error } = await supabase
+        .from('meetup_comments')
+        .select('*')
+        .eq('meetup_id', meetup.id)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        // Table might not exist yet, that's ok
+        console.log('Comments table may not exist:', error);
+        setComments([]);
+      } else if (data && data.length > 0) {
+        // Fetch user profiles for comments
+        const userIds = [...new Set(data.map(c => c.user_id))];
+        const { data: profiles } = await supabase
+          .from('users')
+          .select('id, display_name, username, avatar_url')
+          .in('id', userIds);
+        
+        const commentsWithProfiles = data.map(comment => ({
+          ...comment,
+          profile: profiles?.find(p => p.id === comment.user_id) || null
+        }));
+        setComments(commentsWithProfiles);
+      } else {
+        setComments([]);
+      }
+    } catch (err) {
+      console.error('Error fetching comments:', err);
+      setComments([]);
+    }
+    setLoadingComments(false);
+  };
+
+  const handleSubmitComment = async () => {
+    if (!newComment.trim() || !user) return;
+    
+    setSubmittingComment(true);
+    try {
+      const { error } = await supabase
+        .from('meetup_comments')
+        .insert({
+          meetup_id: meetup.id,
+          user_id: user.id,
+          content: newComment.trim()
+        });
+      
+      if (error) throw error;
+      
+      setNewComment('');
+      fetchComments();
+      toast.success('Comment posted!');
+    } catch (err) {
+      console.error('Error posting comment:', err);
+      toast.error('Failed to post comment. The comments feature may not be set up yet.');
+    }
+    setSubmittingComment(false);
+  };
+
+  const formatTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -478,6 +563,95 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
               <span className="font-medium">Join Meeting</span>
             </a>
           )}
+
+          {/* Comments Section */}
+          <div className="mb-6">
+            <button
+              onClick={() => setShowComments(!showComments)}
+              className="flex items-center gap-2 text-white font-semibold mb-3 hover:text-[#6366F1] transition"
+            >
+              <MessageCircle className="w-5 h-5" />
+              <span>Comments {comments.length > 0 && `(${comments.length})`}</span>
+            </button>
+            
+            {showComments && (
+              <div className="bg-[#0A0A0A] border border-[#27272A] rounded-xl p-4">
+                {/* Add Comment Input */}
+                {user ? (
+                  <div className="flex gap-3 mb-4">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {user.avatar_url ? (
+                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-white text-xs font-bold">
+                          {(user.display_name || user.email || 'U')[0].toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 flex gap-2">
+                      <input
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment()}
+                        placeholder="Add a comment..."
+                        className="flex-1 px-3 py-2 bg-[#1C1C1E] text-white text-sm rounded-lg border border-[#27272A] focus:border-[#6366F1] focus:outline-none"
+                      />
+                      <button
+                        onClick={handleSubmitComment}
+                        disabled={!newComment.trim() || submittingComment}
+                        className="px-3 py-2 bg-[#6366F1] text-white rounded-lg disabled:opacity-50 hover:brightness-110 transition"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[#8E8E93] text-sm text-center py-2 mb-4">
+                    Log in to leave a comment
+                  </p>
+                )}
+                
+                {/* Comments List */}
+                {loadingComments ? (
+                  <div className="text-center py-4">
+                    <div className="w-5 h-5 border-2 border-[#6366F1]/20 border-t-[#6366F1] rounded-full animate-spin mx-auto" />
+                  </div>
+                ) : comments.length === 0 ? (
+                  <p className="text-[#636366] text-sm text-center py-4">
+                    No comments yet. Be the first!
+                  </p>
+                ) : (
+                  <div className="space-y-3 max-h-48 overflow-y-auto">
+                    {comments.map((comment) => (
+                      <div key={comment.id} className="flex gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {comment.profile?.avatar_url ? (
+                            <img src={comment.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-white text-xs font-bold">
+                              {(comment.profile?.display_name || 'U')[0].toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-white font-medium text-sm">
+                              {comment.profile?.display_name || 'User'}
+                            </span>
+                            <span className="text-[#636366] text-xs">
+                              {formatTimeAgo(comment.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-[#D4D4D8] text-sm">{comment.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Actions */}
           <div className="flex gap-3">
@@ -672,19 +846,69 @@ function CreateChannelModal({ user, onClose, onSuccess }) {
 }
 
 function CreateMeetupModal({ user, onClose, onSuccess }) {
-  const [formData, setFormData] = useState({ title: '', description: '', location: '', city: '', event_date: '', event_time: '', max_attendees: 20, is_virtual: false, meeting_link: '' });
+  const [formData, setFormData] = useState({ 
+    title: '', 
+    description: '', 
+    location: '', 
+    city: '', 
+    event_date: '', 
+    event_time: '', 
+    max_attendees: '', // Changed from 20 to empty string
+    is_virtual: false, 
+    meeting_link: '' 
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Handle max attendees input properly
+  const handleMaxAttendeesChange = (e) => {
+    const value = e.target.value;
+    // Allow empty string or valid numbers
+    if (value === '' || /^\d+$/.test(value)) {
+      setFormData(prev => ({ ...prev, max_attendees: value }));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.title || !formData.event_date || !formData.event_time) { toast.error('Please fill in required fields'); return; }
+    if (!formData.title || !formData.event_date || !formData.event_time) { 
+      toast.error('Please fill in required fields'); 
+      return; 
+    }
+    
+    // Validate max attendees
+    const maxAttendees = parseInt(formData.max_attendees) || 20;
+    if (maxAttendees < 2) {
+      toast.error('Max attendees must be at least 2');
+      return;
+    }
+    if (maxAttendees > 500) {
+      toast.error('Max attendees cannot exceed 500');
+      return;
+    }
+    
     setIsSubmitting(true);
     try {
       const eventDateTime = new Date(`${formData.event_date}T${formData.event_time}`);
-      const { error } = await supabase.from('meetups').insert({ title: formData.title, description: formData.description, location: formData.is_virtual ? 'Virtual' : formData.location, city: formData.city, event_date: eventDateTime.toISOString(), max_attendees: formData.max_attendees, is_virtual: formData.is_virtual, meeting_link: formData.meeting_link, host_id: user.id, attendee_count: 1 });
+      const { error } = await supabase.from('meetups').insert({ 
+        title: formData.title, 
+        description: formData.description, 
+        location: formData.is_virtual ? 'Virtual' : formData.location, 
+        city: formData.city, 
+        event_date: eventDateTime.toISOString(), 
+        max_attendees: maxAttendees,
+        is_virtual: formData.is_virtual, 
+        meeting_link: formData.meeting_link, 
+        host_id: user.id, 
+        attendee_count: 1 
+      });
       if (error) throw error;
       onSuccess();
-    } catch (err) { toast.error('Failed to create meetup'); } finally { setIsSubmitting(false); }
+    } catch (err) { 
+      console.error('Create meetup error:', err);
+      toast.error('Failed to create meetup'); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   return (
@@ -693,16 +917,135 @@ function CreateMeetupModal({ user, onClose, onSuccess }) {
         <div className="p-6 border-b border-[rgba(255,255,255,0.1)]">
           <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-4 sm:hidden" />
           <h2 className="text-white text-[20px] font-bold">Create a Meetup</h2>
+          <p className="text-gray-400 text-sm mt-1">Bring founders together</p>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-[#8E8E93] text-[13px] mb-2">Title *</label><input type="text" value={formData.title} onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))} placeholder="e.g., AI Founders Happy Hour" className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div>
-          <div><label className="block text-[#8E8E93] text-[13px] mb-2">Description</label><textarea value={formData.description} onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))} placeholder="What's this meetup about?" rows={3} className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1] resize-none" /></div>
-          <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl"><input type="checkbox" checked={formData.is_virtual} onChange={e => setFormData(prev => ({ ...prev, is_virtual: e.target.checked }))} className="w-5 h-5 rounded bg-[#3F3F46] border-none text-[#6366F1]" /><span className="text-white text-[14px]">Virtual meetup</span></div>
-          {!formData.is_virtual && <><div><label className="block text-[#8E8E93] text-[13px] mb-2">Location *</label><input type="text" value={formData.location} onChange={e => setFormData(prev => ({ ...prev, location: e.target.value }))} placeholder="e.g., Blue Bottle Coffee" className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div><div><label className="block text-[#8E8E93] text-[13px] mb-2">City</label><input type="text" value={formData.city} onChange={e => setFormData(prev => ({ ...prev, city: e.target.value }))} placeholder="e.g., San Francisco" className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div></>}
-          {formData.is_virtual && <div><label className="block text-[#8E8E93] text-[13px] mb-2">Meeting Link</label><input type="url" value={formData.meeting_link} onChange={e => setFormData(prev => ({ ...prev, meeting_link: e.target.value }))} placeholder="https://zoom.us/j/..." className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div>}
-          <div className="grid grid-cols-2 gap-3"><div><label className="block text-[#8E8E93] text-[13px] mb-2">Date *</label><input type="date" value={formData.event_date} onChange={e => setFormData(prev => ({ ...prev, event_date: e.target.value }))} min={new Date().toISOString().split('T')[0]} className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div><div><label className="block text-[#8E8E93] text-[13px] mb-2">Time *</label><input type="time" value={formData.event_time} onChange={e => setFormData(prev => ({ ...prev, event_time: e.target.value }))} className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div></div>
-          <div><label className="block text-[#8E8E93] text-[13px] mb-2">Max Attendees</label><input type="number" value={formData.max_attendees} onChange={e => setFormData(prev => ({ ...prev, max_attendees: parseInt(e.target.value) || 20 }))} min={2} max={100} className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" /></div>
-          <div className="flex gap-3 pt-4"><button type="button" onClick={onClose} className="flex-1 py-3 bg-[#27272A] text-white font-semibold rounded-xl hover:bg-[#3F3F46] transition">Cancel</button><button type="submit" disabled={isSubmitting} className="flex-1 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50">{isSubmitting ? 'Creating...' : 'Create Meetup'}</button></div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div>
+            <label className="block text-[#8E8E93] text-[13px] mb-2">Title *</label>
+            <input 
+              type="text" 
+              value={formData.title} 
+              onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))} 
+              placeholder="e.g., AI Founders Happy Hour" 
+              className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+            />
+          </div>
+          
+          <div>
+            <label className="block text-[#8E8E93] text-[13px] mb-2">Description</label>
+            <textarea 
+              value={formData.description} 
+              onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))} 
+              placeholder="What's this meetup about?" 
+              rows={3} 
+              className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1] resize-none" 
+            />
+          </div>
+          
+          <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
+            <input 
+              type="checkbox" 
+              checked={formData.is_virtual} 
+              onChange={e => setFormData(prev => ({ ...prev, is_virtual: e.target.checked }))} 
+              className="w-5 h-5 rounded bg-[#3F3F46] border-none text-[#6366F1]" 
+            />
+            <div>
+              <span className="text-white text-[14px]">Virtual meetup</span>
+              <p className="text-gray-500 text-[12px]">Host online via Zoom, Meet, etc.</p>
+            </div>
+          </div>
+          
+          {!formData.is_virtual && (
+            <>
+              <div>
+                <label className="block text-[#8E8E93] text-[13px] mb-2">Location *</label>
+                <input 
+                  type="text" 
+                  value={formData.location} 
+                  onChange={e => setFormData(prev => ({ ...prev, location: e.target.value }))} 
+                  placeholder="e.g., Blue Bottle Coffee, 123 Main St" 
+                  className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+                />
+              </div>
+              <div>
+                <label className="block text-[#8E8E93] text-[13px] mb-2">City</label>
+                <input 
+                  type="text" 
+                  value={formData.city} 
+                  onChange={e => setFormData(prev => ({ ...prev, city: e.target.value }))} 
+                  placeholder="e.g., San Francisco" 
+                  className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+                />
+              </div>
+            </>
+          )}
+          
+          {formData.is_virtual && (
+            <div>
+              <label className="block text-[#8E8E93] text-[13px] mb-2">Meeting Link</label>
+              <input 
+                type="url" 
+                value={formData.meeting_link} 
+                onChange={e => setFormData(prev => ({ ...prev, meeting_link: e.target.value }))} 
+                placeholder="https://zoom.us/j/..." 
+                className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+              />
+              <p className="text-[#636366] text-[11px] mt-1">Only visible to attendees who RSVP</p>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[#8E8E93] text-[13px] mb-2">Date *</label>
+              <input 
+                type="date" 
+                value={formData.event_date} 
+                onChange={e => setFormData(prev => ({ ...prev, event_date: e.target.value }))} 
+                min={new Date().toISOString().split('T')[0]} 
+                className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+              />
+            </div>
+            <div>
+              <label className="block text-[#8E8E93] text-[13px] mb-2">Time *</label>
+              <input 
+                type="time" 
+                value={formData.event_time} 
+                onChange={e => setFormData(prev => ({ ...prev, event_time: e.target.value }))} 
+                className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-[#8E8E93] text-[13px] mb-2">Max Attendees</label>
+            <input 
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={formData.max_attendees} 
+              onChange={handleMaxAttendeesChange}
+              placeholder="20"
+              className="w-full px-4 py-3 bg-[#27272A] text-white border border-[rgba(255,255,255,0.1)] rounded-xl focus:outline-none focus:border-[#6366F1]" 
+            />
+            <p className="text-[#636366] text-[11px] mt-1">Leave empty for default (20). Max 500.</p>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="flex-1 py-3 bg-[#27272A] text-white font-semibold rounded-xl hover:bg-[#3F3F46] transition"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              disabled={isSubmitting} 
+              className="flex-1 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50"
+            >
+              {isSubmitting ? 'Creating...' : 'Create Meetup'}
+            </button>
+          </div>
         </form>
       </div>
     </div>

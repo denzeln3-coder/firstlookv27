@@ -23,7 +23,7 @@ import { createPageUrl } from '../utils';
 import PitchModal from '../components/PitchModal';
 import NotificationBell from '../components/NotificationBell';
 
-// Safe dynamic imports - these components are optional
+// Safe dynamic imports
 let InstallPrompt, OnboardingTour, FeatureTooltip, WelcomeCTA, AIRecommendationCard;
 try { InstallPrompt = require('../components/InstallPrompt').default; } catch { InstallPrompt = () => null; }
 try { OnboardingTour = require('../components/OnboardingTour').default; } catch { OnboardingTour = () => null; }
@@ -40,7 +40,6 @@ function useDebouncedValue(value, delay = 250) {
   return debounced;
 }
 
-// Simplified prefetch strategy - no external dependency
 function getPrefetchStrategy() {
   const connection = navigator.connection;
   if (connection) {
@@ -119,7 +118,6 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
       className="relative overflow-hidden rounded-sm bg-[#18181B] transition-all duration-200 hover:scale-[1.02] hover:brightness-110 hover:z-10 w-full"
     >
       <div className="relative w-full" style={{ paddingBottom: '125%' }}>
-        {/* Thumbnail or gradient fallback */}
         {hasThumbnail ? (
           <img
             src={pitch.thumbnail_url}
@@ -135,7 +133,6 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
           </div>
         )}
 
-        {/* Video layer */}
         {hasVideo && (
           <video
             ref={videoRef}
@@ -151,10 +148,8 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
           />
         )}
 
-        {/* Gradient scrim */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
 
-        {/* Text overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
           <p className="text-white text-[13px] font-semibold truncate mb-1 drop-shadow-lg">
             {displayName}
@@ -214,10 +209,6 @@ export default function Explore() {
   const handleCompleteOnboarding = () => {
     localStorage.setItem('onboardingCompleted', 'true');
     setShowOnboarding(false);
-    setTimeout(() => {
-      const shownTooltips = JSON.parse(localStorage.getItem('shownTooltips') || '[]');
-      if (!shownTooltips.includes('upvote')) setCurrentTooltip('upvote');
-    }, 2000);
   };
 
   const handleDismissTooltip = () => {
@@ -228,7 +219,7 @@ export default function Explore() {
     setCurrentTooltip(null);
   };
 
-  // Use 'users' table to match AuthContext
+  // Fetch user with user_type for role-based UI
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
@@ -244,6 +235,11 @@ export default function Explore() {
     staleTime: 60000,
     refetchOnWindowFocus: false
   });
+
+  // Role-based permissions
+  const isFounder = user?.user_type === 'founder';
+  const isInvestor = user?.user_type === 'investor';
+  const isHunter = user?.user_type === 'hunter';
 
   const { data: rawPitches = [], isLoading: pitchesLoading } = useQuery({
     queryKey: ['pitches'],
@@ -286,7 +282,6 @@ export default function Explore() {
     refetchInterval: 30000
   });
 
-  // followingList is already an array of IDs (strings)
   const { data: followingList = [] } = useQuery({
     queryKey: ['followingList', user?.id],
     queryFn: async () => {
@@ -304,23 +299,19 @@ export default function Explore() {
 
   const isLoading = pitchesLoading;
 
-  // Single sorting/filtering pass
   const filteredPitches = useMemo(() => {
     if (!rawPitches.length) return [];
     
     let list = [...rawPitches];
     
-    // Apply category filter
     if (selectedCategory !== 'all') {
       list = list.filter((p) => p.category === selectedCategory);
     }
     
-    // Apply stage filter
     if (selectedStage !== 'all') {
       list = list.filter((p) => p.product_stage === selectedStage);
     }
     
-    // Apply search filter
     const term = debouncedSearchTerm.trim().toLowerCase();
     if (term) {
       list = list.filter((p) => {
@@ -329,16 +320,14 @@ export default function Explore() {
       });
     }
     
-    // Apply following filter
     if (sortBy === 'following') {
       if (user && followingList.length > 0) {
         list = list.filter((p) => followingList.includes(p.founder_id));
       } else {
-        return []; // No following = empty list
+        return [];
       }
     }
     
-    // Sort based on sortBy
     const now = Date.now();
     switch (sortBy) {
       case 'newest':
@@ -386,6 +375,23 @@ export default function Explore() {
     }
   };
 
+  // Navigate to appropriate page based on user type for center button
+  const handleCenterButtonClick = () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    
+    if (isFounder) {
+      navigate(createPageUrl('RecordPitch'));
+    } else if (isInvestor) {
+      navigate(createPageUrl('InvestorDashboard'));
+    } else {
+      // Hunters go to Settings to potentially change user type
+      navigate(createPageUrl('Settings'));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#000000] w-full pb-20">
       {/* Header */}
@@ -422,15 +428,26 @@ export default function Explore() {
 
             {user ? (
               <>
-                <button onClick={() => navigate(createPageUrl('CreatorStudio'))} className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-[rgba(255,255,255,0.06)] text-white text-[12px] font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
-                  <Palette className="w-4 h-4" />
-                  <span>Studio</span>
-                </button>
+                {/* Only show Studio button for founders */}
+                {isFounder && (
+                  <button onClick={() => navigate(createPageUrl('CreatorStudio'))} className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-[rgba(255,255,255,0.06)] text-white text-[12px] font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
+                    <Palette className="w-4 h-4" />
+                    <span>Studio</span>
+                  </button>
+                )}
 
-                <button onClick={handleRecordPitch} className="flex items-center gap-1.5 px-3 py-2 bg-[#8B5CF6] text-white text-[12px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
-                  <Video className="w-4 h-4" />
-                  <span className="hidden sm:inline">Record</span>
-                </button>
+                {/* Show Record button only for founders, Deal Flow for investors */}
+                {isFounder ? (
+                  <button onClick={handleRecordPitch} className="flex items-center gap-1.5 px-3 py-2 bg-[#8B5CF6] text-white text-[12px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
+                    <Video className="w-4 h-4" />
+                    <span className="hidden sm:inline">Record</span>
+                  </button>
+                ) : isInvestor ? (
+                  <button onClick={() => navigate(createPageUrl('InvestorDashboard'))} className="flex items-center gap-1.5 px-3 py-2 bg-[#10B981] text-white text-[12px] font-semibold rounded-xl hover:bg-[#059669] transition-all duration-200">
+                    <TrendingUp className="w-4 h-4" />
+                    <span className="hidden sm:inline">Deal Flow</span>
+                  </button>
+                ) : null}
 
                 <button onClick={() => navigate(createPageUrl('Profile'))} className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-white font-semibold hover:brightness-110 transition-all duration-200 overflow-hidden">
                   {user.avatar_url ? (
@@ -602,7 +619,7 @@ export default function Explore() {
         )}
       </div>
 
-      {/* Bottom Nav */}
+      {/* Bottom Nav - Role-aware */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg border-t border-[rgba(255,255,255,0.06)] z-50">
         <div className="flex items-center justify-around py-2 px-4 pb-safe">
           <button onClick={() => navigate(createPageUrl('Explore'))} className="flex flex-col items-center gap-1 min-h-[44px] justify-center">
@@ -617,9 +634,22 @@ export default function Explore() {
             <span className="text-[10px] font-semibold">Community</span>
           </button>
 
-          <button onClick={handleRecordPitch} className="flex flex-col items-center gap-1 -mt-4 min-h-[44px] justify-center">
-            <div className="w-14 h-14 rounded-full bg-[#8B5CF6] flex items-center justify-center shadow-[0_4px_20px_rgba(139,92,246,0.5)] hover:bg-[#9D6FFF] transition-colors">
-              <Video className="w-6 h-6 text-white" />
+          {/* Center button - changes based on user type */}
+          <button onClick={handleCenterButtonClick} className="flex flex-col items-center gap-1 -mt-4 min-h-[44px] justify-center">
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:brightness-110 transition-colors ${
+              isFounder 
+                ? 'bg-[#8B5CF6] shadow-[0_4px_20px_rgba(139,92,246,0.5)]' 
+                : isInvestor 
+                  ? 'bg-[#10B981] shadow-[0_4px_20px_rgba(16,185,129,0.5)]'
+                  : 'bg-[#F59E0B] shadow-[0_4px_20px_rgba(245,158,11,0.5)]'
+            }`}>
+              {isFounder ? (
+                <Video className="w-6 h-6 text-white" />
+              ) : isInvestor ? (
+                <TrendingUp className="w-6 h-6 text-white" />
+              ) : (
+                <Search className="w-6 h-6 text-white" />
+              )}
             </div>
           </button>
 

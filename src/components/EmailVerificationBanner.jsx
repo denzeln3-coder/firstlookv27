@@ -1,12 +1,13 @@
 import React from 'react';
 import { AlertCircle, X } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 export default function EmailVerificationBanner({ onDismiss }) {
   const handleResendVerification = async () => {
     try {
-      // Base44 will handle sending verification email
+      const { error } = await supabase.auth.resend({ type: 'signup' });
+      if (error) throw error;
       toast.success('Verification email sent! Check your inbox.');
     } catch (error) {
       toast.error('Failed to send verification email');
@@ -19,21 +20,12 @@ export default function EmailVerificationBanner({ onDismiss }) {
         <div className="flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-[#09090B]" />
           <div>
-            <p className="text-[#09090B] font-semibold text-[14px]">
-              Please verify your email to submit pitches
-            </p>
-            <button
-              onClick={handleResendVerification}
-              className="text-[#09090B] text-[12px] underline hover:no-underline"
-            >
-              Resend verification email
-            </button>
+            <p className="text-[#09090B] font-semibold text-[14px]">Please verify your email to submit pitches</p>
+            <button onClick={handleResendVerification} className="text-[#09090B] text-[12px] underline hover:no-underline">Resend verification email</button>
           </div>
         </div>
         {onDismiss && (
-          <button onClick={onDismiss} className="text-[#09090B] hover:opacity-70">
-            <X className="w-5 h-5" />
-          </button>
+          <button onClick={onDismiss} className="text-[#09090B] hover:opacity-70"><X className="w-5 h-5" /></button>
         )}
       </div>
     </div>

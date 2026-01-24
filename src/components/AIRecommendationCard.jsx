@@ -1,5 +1,6 @@
+cat > src/components/AIRecommendationCard.jsx << 'ENDOFFILE'
 import React from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -11,11 +12,10 @@ export default function AIRecommendationCard() {
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      try {
-        return await base44.auth.me();
-      } catch {
-        return null;
-      }
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+      const { data: profile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+      return { ...authUser, ...profile };
     }
   });
 
@@ -41,3 +41,4 @@ export default function AIRecommendationCard() {
     </button>
   );
 }
+ENDOFFILE

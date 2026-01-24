@@ -23,7 +23,7 @@ export default function Messages() {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
         setUser({ ...user, ...profile });
       } else {
         navigate('/Login');
@@ -59,7 +59,7 @@ export default function Messages() {
       });
 
       const partnerIds = [...conversationMap.keys()];
-      const { data: profiles } = await supabase.from('profiles').select('id, display_name, username, avatar_url').in('id', partnerIds);
+      const { data: profiles } = await supabase.from('users').select('id, display_name, username, avatar_url').in('id', partnerIds);
       const convos = [...conversationMap.values()].map(conv => ({ ...conv, partner: profiles?.find(p => p.id === conv.partnerId) }));
       setConversations(convos);
       setLoading(false);
@@ -69,7 +69,7 @@ export default function Messages() {
         if (existing) {
           setSelectedConversation(existing);
         } else {
-          const { data: partnerProfile } = await supabase.from('profiles').select('id, display_name, username, avatar_url').eq('id', selectedUserId).single();
+          const { data: partnerProfile } = await supabase.from('users').select('id, display_name, username, avatar_url').eq('id', selectedUserId).single();
           if (partnerProfile) setSelectedConversation({ partnerId: selectedUserId, partner: partnerProfile, lastMessage: null, unreadCount: 0 });
         }
       }

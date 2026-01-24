@@ -20,6 +20,7 @@ import FinalReviewScreen from '../components/recording/FinalReviewScreen';
 import UploadProgress from '../components/recording/UploadProgress';
 import SuccessScreen from '../components/recording/SuccessScreen';
 import { toast } from 'sonner';
+import { Video, ArrowLeft } from 'lucide-react';
 
 const DRAFT_KEY = 'pitchDraft';
 
@@ -40,7 +41,6 @@ const clearDraft = () => {
   localStorage.removeItem('firstlook_pitch_draft');
 };
 
-// Streamlined step names for clarity
 const STEPS = {
   INFO: 1,
   PITCH_INSTRUCTIONS: 2,
@@ -57,23 +57,100 @@ const STEPS = {
   SUCCESS: 11
 };
 
+// Access denied component for non-founders
+function FounderAccessRequired({ onBack }) {
+  const navigate = useNavigate();
+  
+  return (
+    <div className="min-h-screen bg-[#09090B] flex items-center justify-center p-6">
+      <div className="text-center max-w-md">
+        <div className="w-16 h-16 rounded-full bg-[#6366F1]/20 flex items-center justify-center mx-auto mb-4">
+          <Video className="w-8 h-8 text-[#6366F1]" />
+        </div>
+        <h2 className="text-white text-2xl font-bold mb-3">Founder Access Only</h2>
+        <p className="text-[#A1A1AA] mb-6">
+          Only founders can record and post pitches. Switch to founder mode in settings to access this feature.
+        </p>
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={() => navigate(createPageUrl('Explore'))}
+            className="px-6 py-3 bg-[#27272A] text-white font-semibold rounded-xl hover:bg-[#3A3A3D] transition"
+          >
+            Back to Feed
+          </button>
+          <button
+            onClick={() => navigate(createPageUrl('Settings'))}
+            className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:bg-[#7C7FF2] transition"
+          >
+            Go to Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RecordPitch() {
   const navigate = useNavigate();
   const [step, setStep] = useState(STEPS.INFO);
   const [formData, setFormData] = useState(null);
   const [pitchBlob, setPitchBlob] = useState(null);
   const [demoBlob, setDemoBlob] = useState(null);
-  const [recordingType, setRecordingType] = useState('screen'); // Default to screen recording for demo
+  const [recordingType, setRecordingType] = useState('screen');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState('');
   const [submittedPitchId, setSubmittedPitchId] = useState(null);
   const [error, setError] = useState(null);
   const [showDraftPrompt, setShowDraftPrompt] = useState(false);
   const [isUploadedPitch, setIsUploadedPitch] = useState(false);
+  
+  // Access control state
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [userType, setUserType] = useState(null);
 
-  // Check for draft on mount
+  // Check user access on mount
   useEffect(() => {
-    if (step === STEPS.INFO && hasValidDraft()) {
+    const checkAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          // Not logged in - redirect to login
+          navigate('/login');
+          return;
+        }
+        
+        // Get user profile to check user_type
+        const { data: profile } = await supabase
+          .from('users')
+          .select('user_type')
+          .eq('id', user.id)
+          .single();
+        
+        const type = profile?.user_type;
+        setUserType(type);
+        
+        // Only founders can access RecordPitch
+        if (type === 'founder') {
+          setHasAccess(true);
+        } else {
+          setHasAccess(false);
+        }
+      } catch (err) {
+        console.error('Error checking access:', err);
+        setHasAccess(false);
+      } finally {
+        setAccessChecked(true);
+      }
+    };
+    
+    checkAccess();
+  }, [navigate]);
+
+  // Check for draft on mount (only if has access)
+  useEffect(() => {
+    if (hasAccess && step === STEPS.INFO && hasValidDraft()) {
       try {
         const draft = localStorage.getItem(DRAFT_KEY) || localStorage.getItem('firstlook_pitch_draft');
         const parsed = JSON.parse(draft);
@@ -83,18 +160,30 @@ export default function RecordPitch() {
         clearDraft();
       }
     }
-  }, [step]);
+  }, [step, hasAccess]);
 
-  // STEP 1: Form submission
+  // Loading state while checking access
+  if (!accessChecked) {
+    return (
+      <div className="min-h-screen bg-[#09090B] flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-white/20 border-t-[#6366F1] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Access denied for non-founders
+  if (!hasAccess) {
+    return <FounderAccessRequired onBack={() => navigate(createPageUrl('Explore'))} />;
+  }
+
+  // Rest of the component (original logic)
   const handleFormSubmit = (data) => {
     setFormData(data);
     setIsUploadedPitch(false);
-    // Skip instructions if user has seen them before
     const skipInstructions = localStorage.getItem('hidePitchInstructions') === 'true';
     setStep(skipInstructions ? STEPS.PITCH_RECORD : STEPS.PITCH_INSTRUCTIONS);
   };
 
-  // Handle uploaded pitch (file upload instead of recording)
   const handleUploadPitch = async (blob, data) => {
     setUploadStage('Validating video...');
     const validation = await validateVideoBlob(blob);
@@ -110,10 +199,8 @@ export default function RecordPitch() {
     setStep(STEPS.PITCH_PREVIEW);
   };
 
-  // STEP 2: Start recording
   const handleStartPitchRecording = () => setStep(STEPS.PITCH_RECORD);
 
-  // STEP 3: Recording complete
   const handlePitchRecordingComplete = async (blob) => {
     const validation = await validateVideoBlob(blob);
     if (!validation.valid) {
@@ -124,16 +211,13 @@ export default function RecordPitch() {
     setStep(STEPS.PITCH_PREVIEW);
   };
 
-  // STEP 4: Preview -> Edit or Demo
   const handlePitchPreviewContinue = () => setStep(STEPS.PITCH_EDIT);
 
-  // STEP 4.5: Edit complete -> Demo options
   const handlePitchEditComplete = (editedBlob) => {
     setPitchBlob(editedBlob);
     setStep(STEPS.DEMO_OPTION);
   };
 
-  // Re-record pitch
   const handlePitchReRecord = () => {
     setPitchBlob(null);
     if (isUploadedPitch) {
@@ -144,10 +228,8 @@ export default function RecordPitch() {
     }
   };
 
-  // STEP 5: Demo options
   const handleRecordDemoChoice = (type) => {
     setRecordingType(type || 'screen');
-    // Skip instructions if user has seen them
     const skipInstructions = localStorage.getItem('hideDemoInstructions') === 'true';
     setStep(skipInstructions ? STEPS.DEMO_RECORD : STEPS.DEMO_INSTRUCTIONS);
   };
@@ -159,13 +241,11 @@ export default function RecordPitch() {
     setStep(STEPS.FINAL_REVIEW); 
   };
 
-  // STEP 6: Demo instructions -> record
   const handleStartDemoRecording = (type) => {
     setRecordingType(type || 'screen');
     setStep(STEPS.DEMO_RECORD);
   };
 
-  // STEP 7: Demo recording complete
   const handleDemoRecordingComplete = async (blob) => {
     const validation = await validateVideoBlob(blob);
     if (!validation.valid) {
@@ -176,7 +256,6 @@ export default function RecordPitch() {
     setStep(STEPS.DEMO_PREVIEW);
   };
 
-  // Handle demo upload (file instead of recording)
   const handleDemoUploadComplete = async (blob) => {
     const validation = await validateVideoBlob(blob);
     if (!validation.valid) {
@@ -187,20 +266,17 @@ export default function RecordPitch() {
     setStep(STEPS.DEMO_PREVIEW);
   };
 
-  // STEP 8: Demo preview
   const handleDemoPreviewContinue = () => setStep(STEPS.DEMO_EDIT);
   const handleDemoReRecord = () => { 
     setDemoBlob(null); 
     setStep(STEPS.DEMO_RECORD); 
   };
 
-  // STEP 8.5: Demo edit complete
   const handleDemoEditComplete = (editedBlob) => {
     setDemoBlob(editedBlob);
     setStep(STEPS.FINAL_REVIEW);
   };
 
-  // STEP 9: Final submit
   const handleFinalSubmit = async () => {
     setStep(STEPS.UPLOADING);
     
@@ -215,7 +291,6 @@ export default function RecordPitch() {
       
       setUploadProgress(10);
       
-      // Generate thumbnail
       setUploadStage('Generating thumbnail...');
       const thumbnailBlob = await generateThumbnail(pitchBlob, 0.5);
       const thumbnailFile = new File([thumbnailBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
@@ -229,7 +304,6 @@ export default function RecordPitch() {
         demoFile = new File([demoBlob], 'demo.mp4', { type: 'video/mp4' });
       }
       
-      // Compress if needed
       if (pitchSizeMB > 45) {
         setUploadStage('Compressing pitch video...');
         const result = await compressVideo(pitchBlob, 45);
@@ -252,11 +326,9 @@ export default function RecordPitch() {
       setUploadProgress(20);
       setUploadStage('Uploading pitch video...');
       
-      // Upload pitch video
       const pitchUpload = await uploadVideo(pitchFile, 'pitches');
       setUploadProgress(40);
       
-      // Upload demo if exists
       let demoUpload = null;
       if (demoFile) {
         setUploadStage('Uploading demo video...');
@@ -264,12 +336,10 @@ export default function RecordPitch() {
         setUploadProgress(55);
       }
       
-      // Upload thumbnail
       setUploadStage('Uploading thumbnail...');
       const thumbnailUpload = await uploadThumbnail(thumbnailFile);
       setUploadProgress(65);
       
-      // Upload logo if exists
       let logoUrl = null;
       if (formData.logoFile) {
         setUploadStage('Uploading logo...');
@@ -287,7 +357,6 @@ export default function RecordPitch() {
       
       setUploadStage('Creating your pitch...');
       
-      // Create startup record
       const { data: startup, error: startupError } = await supabase
         .from('startups')
         .insert({
@@ -341,7 +410,6 @@ export default function RecordPitch() {
     }
   };
 
-  // Navigation helpers
   const handleBack = (targetStep) => setStep(targetStep);
 
   // Error screen
