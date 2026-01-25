@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { X, ArrowUp, MessageCircle, Share2, Bookmark, Link2, Twitter, Flag, Send, ExternalLink, Users, MapPin, TrendingUp, DollarSign, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, ArrowUp, MessageCircle, Share2, Bookmark, Link2, Twitter, Flag, Send, ExternalLink, Users, MapPin, TrendingUp, DollarSign, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,6 +21,9 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
   const [passFeedback, setPassFeedback] = useState('');
   const [showInfoCard, setShowInfoCard] = useState(false);
   const [localUpvoteCount, setLocalUpvoteCount] = useState(pitch.upvote_count || 0);
+  const [investorNotes, setInvestorNotes] = useState('');
+  const [investorStatus, setInvestorStatus] = useState(null);
+  const [savingNotes, setSavingNotes] = useState(false);
   const viewStartTime = React.useRef(Date.now());
 
   // Track view on mount
@@ -74,6 +77,29 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       return user;
     }
   });
+
+  // Fetch investor notes for this startup
+  const { data: existingNotes } = useQuery({
+    queryKey: ['investorNotes', user?.id, pitch.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('investor_notes')
+        .select('*')
+        .eq('investor_id', user.id)
+        .eq('startup_id', pitch.id)
+        .single();
+      return data;
+    },
+    enabled: !!user && isInvestorView
+  });
+
+  // Load existing notes into state when fetched
+  useEffect(() => {
+    if (existingNotes) {
+      setInvestorNotes(existingNotes.notes || '');
+      setInvestorStatus(existingNotes.status || null);
+    }
+  }, [existingNotes]);
 
   // FIXED: Use 'users' table instead of 'profiles'
   const { data: founder } = useQuery({
@@ -286,6 +312,68 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     navigate(createPageUrl('Messages') + `?userId=${pitch.founder_id}`);
   };
 
+  // Save investor notes
+  const handleSaveNotes = async () => {
+    if (!user) return;
+    
+    setSavingNotes(true);
+    try {
+      const { error } = await supabase
+        .from('investor_notes')
+        .upsert({
+          investor_id: user.id,
+          startup_id: pitch.id,
+          notes: investorNotes,
+          status: investorStatus,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'investor_id,startup_id'
+        });
+      
+      if (error) throw error;
+      
+      toast.success('Notes saved!');
+      queryClient.invalidateQueries({ queryKey: ['investorNotes', user?.id, pitch.id] });
+    } catch (error) {
+      console.error('Failed to save notes:', error);
+      toast.error('Failed to save notes');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  // Update investor status
+  const handleStatusChange = async (newStatus) => {
+    setInvestorStatus(newStatus);
+    
+    if (!user) return;
+    
+    try {
+      await supabase
+        .from('investor_notes')
+        .upsert({
+          investor_id: user.id,
+          startup_id: pitch.id,
+          status: newStatus,
+          notes: investorNotes,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'investor_id,startup_id'
+        });
+      
+      const statusMessages = {
+        interested: '✅ Marked as Interested',
+        watching: '👀 Added to Watch List',
+        passed: '❌ Passed'
+      };
+      toast.success(statusMessages[newStatus] || 'Status updated');
+      queryClient.invalidateQueries({ queryKey: ['investorNotes', user?.id, pitch.id] });
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      toast.error('Failed to update status');
+    }
+  };
+
   const handleInvestorAction = async (actionType) => {
     if (!user) {
       setShowLoginPrompt(true);
@@ -334,6 +422,10 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       action_type: 'passed',
       feedback: passFeedback || null
     });
+    
+    // Also update investor_notes status
+    await handleStatusChange('passed');
+    
     toast.success('Pitch hidden from your feed');
     setShowPassModal(false);
     setPassFeedback('');
@@ -381,6 +473,12 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     'Bootstrapped': 'bg-[#8B5CF6]/20 text-[#8B5CF6]'
   };
 
+  const statusColors = {
+    interested: 'bg-[#22C55E] text-white',
+    watching: 'bg-[#F59E0B] text-white',
+    passed: 'bg-[#EF4444] text-white'
+  };
+
   return (
     <div className="fixed inset-0 bg-[#000000] z-40">
       <div className="relative w-full h-full">
@@ -404,6 +502,17 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
             <X className="w-6 h-6" />
           </button>
         </div>
+
+        {/* Investor Status Badge - Top Left */}
+        {isInvestorView && investorStatus && (
+          <div className="absolute top-4 left-4 z-20">
+            <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${statusColors[investorStatus]}`}>
+              {investorStatus === 'interested' && '✅ Interested'}
+              {investorStatus === 'watching' && '👀 Watching'}
+              {investorStatus === 'passed' && '❌ Passed'}
+            </span>
+          </div>
+        )}
 
         {/* Bottom left - Startup info */}
         <div className="absolute bottom-20 left-4 right-20 z-10">
@@ -490,11 +599,18 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
           <button onClick={handleBookmark} className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all ${hasBookmarked ? 'bg-white/20' : 'bg-black/50 hover:bg-black/70'}`}>
             <Bookmark className="w-6 h-6 text-white" fill={hasBookmarked ? 'white' : 'none'} />
           </button>
+
+          {/* Notes button for investors */}
+          {isInvestorView && (
+            <button onClick={() => setShowInvestorActions(true)} className="w-12 h-12 rounded-full bg-[#6366F1]/50 backdrop-blur-sm flex items-center justify-center hover:bg-[#6366F1]/70 transition">
+              <FileText className="w-6 h-6 text-white" />
+            </button>
+          )}
         </div>
 
         {/* Bottom CTA buttons */}
         <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3 px-4 z-10">
-          {isInvestorView && user?.is_investor ? (
+          {isInvestorView ? (
             <>
               <button onClick={() => setShowInvestorActions(true)} className="flex-1 max-w-[200px] px-6 py-3 bg-white text-black text-[14px] font-semibold rounded-full hover:bg-gray-100 transition shadow-lg">
                 Investor Actions
@@ -770,27 +886,60 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
 
       <ReportModal pitch={pitch} isOpen={showReportModal} onClose={() => setShowReportModal(false)} />
 
-      {/* Investor Actions Modal */}
+      {/* Investor Actions Modal - Updated with Notes */}
       {showInvestorActions && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-20" onClick={() => setShowInvestorActions(false)}>
-          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] p-6 pb-8 border-t border-[rgba(255,255,255,0.1)]" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-6" />
-            <h3 className="text-white text-xl font-bold mb-6">Investor Actions</h3>
+            <h3 className="text-white text-xl font-bold mb-4">Investor Actions</h3>
+            
+            {/* Status Buttons */}
+            <div className="mb-6">
+              <div className="text-[#8E8E93] text-sm mb-3">Deal Status</div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleStatusChange('interested')}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition ${investorStatus === 'interested' ? 'bg-[#22C55E] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
+                >
+                  ✅ Interested
+                </button>
+                <button 
+                  onClick={() => handleStatusChange('watching')}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition ${investorStatus === 'watching' ? 'bg-[#F59E0B] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
+                >
+                  👀 Watching
+                </button>
+                <button 
+                  onClick={() => handleStatusChange('passed')}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition ${investorStatus === 'passed' ? 'bg-[#EF4444] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
+                >
+                  ❌ Pass
+                </button>
+              </div>
+            </div>
+
+            {/* Private Notes */}
+            <div className="mb-6">
+              <div className="text-[#8E8E93] text-sm mb-3">Private Notes</div>
+              <textarea
+                value={investorNotes}
+                onChange={(e) => setInvestorNotes(e.target.value)}
+                placeholder="Add your private notes about this startup..."
+                className="w-full px-4 py-3 bg-[#27272A] text-white border border-[#3F3F46] rounded-xl focus:outline-none focus:border-[#6366F1] resize-none"
+                rows={4}
+              />
+              <button 
+                onClick={handleSaveNotes}
+                disabled={savingNotes}
+                className="mt-3 w-full py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50"
+              >
+                {savingNotes ? 'Saving...' : 'Save Notes'}
+              </button>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="text-[#8E8E93] text-sm mb-3">Quick Actions</div>
             <div className="space-y-3">
-              <button onClick={() => handleInvestorAction('interested')} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
-                <div className="w-10 h-10 bg-[#22C55E]/20 rounded-full flex items-center justify-center"><span className="text-2xl">👍</span></div>
-                <div className="text-left">
-                  <div className="text-white font-semibold">Interested</div>
-                  <div className="text-[#8E8E93] text-xs">Add to pipeline & notify founder</div>
-                </div>
-              </button>
-              <button onClick={() => handleInvestorAction('saved')} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
-                <div className="w-10 h-10 bg-[#6366F1]/20 rounded-full flex items-center justify-center"><span className="text-2xl">💾</span></div>
-                <div className="text-left">
-                  <div className="text-white font-semibold">Save to Pipeline</div>
-                  <div className="text-[#8E8E93] text-xs">Track without notifying</div>
-                </div>
-              </button>
               <button onClick={() => handleInvestorAction('request_intro')} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
                 <div className="w-10 h-10 bg-[#8B5CF6]/20 rounded-full flex items-center justify-center"><span className="text-2xl">📧</span></div>
                 <div className="text-left">
@@ -803,13 +952,6 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
                 <div className="text-left">
                   <div className="text-white font-semibold">Message Founder</div>
                   <div className="text-[#8E8E93] text-xs">Start a conversation</div>
-                </div>
-              </button>
-              <button onClick={() => handleInvestorAction('passed')} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
-                <div className="w-10 h-10 bg-[#EF4444]/20 rounded-full flex items-center justify-center"><span className="text-2xl">👎</span></div>
-                <div className="text-left">
-                  <div className="text-white font-semibold">Pass</div>
-                  <div className="text-[#8E8E93] text-xs">Hide from feed</div>
                 </div>
               </button>
             </div>

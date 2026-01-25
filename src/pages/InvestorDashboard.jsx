@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, Filter, TrendingUp, Eye, Bookmark, BookmarkPlus, Sparkles, Bell } from 'lucide-react';
+import { ArrowLeft, Filter, TrendingUp, Eye, Bookmark, BookmarkPlus, Sparkles, Bell, MessageCircle } from 'lucide-react';
 import PitchModal from '../components/PitchModal';
 import { toast } from 'sonner';
 
@@ -67,6 +67,46 @@ export default function InvestorDashboard() {
     enabled: !!user
   });
 
+  // Get viewed startups from pitch_views table
+  const { data: viewedPitches = [] } = useQuery({
+    queryKey: ['viewedPitches', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('pitch_views')
+        .select('startup_id, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      return data || [];
+    },
+    enabled: !!user
+  });
+
+  // Get contacted founders (messages sent by this investor)
+  const { data: contactedStartupIds = [] } = useQuery({
+    queryKey: ['contactedStartups', user?.id],
+    queryFn: async () => {
+      // Get all messages sent by this user
+      const { data: messages } = await supabase
+        .from('messages')
+        .select('receiver_id')
+        .eq('sender_id', user.id);
+      
+      if (!messages?.length) return [];
+      
+      // Get unique receiver IDs
+      const receiverIds = [...new Set(messages.map(m => m.receiver_id))];
+      
+      // Find startups where these receivers are founders
+      const { data: startups } = await supabase
+        .from('startups')
+        .select('id')
+        .in('founder_id', receiverIds);
+      
+      return startups?.map(s => s.id) || [];
+    },
+    enabled: !!user
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (startupId) => {
       const existing = pipeline.find(p => p.startup_id === startupId);
@@ -81,8 +121,14 @@ export default function InvestorDashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['investorPipeline', user?.id] })
   });
 
+  // Get unique viewed startup IDs
+  const viewedStartupIds = useMemo(() => {
+    return [...new Set(viewedPitches.map(v => v.startup_id))];
+  }, [viewedPitches]);
+
   const filteredStartups = useMemo(() => {
     let filtered = allStartups;
+    
     if (activeTab === 'for_you' && investorProfile) {
       filtered = filtered.filter(s => {
         const catMatch = !investorProfile.preferred_categories?.length || investorProfile.preferred_categories.includes(s.category);
@@ -96,19 +142,41 @@ export default function InvestorDashboard() {
     } else if (activeTab === 'saved') {
       const savedIds = pipeline.map(p => p.startup_id);
       filtered = filtered.filter(s => savedIds.includes(s.id));
+    } else if (activeTab === 'viewed') {
+      filtered = filtered.filter(s => viewedStartupIds.includes(s.id));
+    } else if (activeTab === 'contacted') {
+      filtered = filtered.filter(s => contactedStartupIds.includes(s.id));
     }
+    
     if (stageFilter !== 'all') filtered = filtered.filter(s => s.stage === stageFilter);
     if (categoryFilter !== 'all') filtered = filtered.filter(s => s.category === categoryFilter);
     return filtered;
-  }, [allStartups, investorProfile, actions, pipeline, activeTab, stageFilter, categoryFilter]);
+  }, [allStartups, investorProfile, actions, pipeline, activeTab, stageFilter, categoryFilter, viewedStartupIds, contactedStartupIds]);
 
   const stats = useMemo(() => ({
-    viewed: new Set(actions.filter(a => a.action_type === 'viewed').map(a => a.startup_id)).size,
+    viewed: viewedStartupIds.length,
     saved: pipeline.length,
-    contacted: actions.filter(a => a.action_type === 'contacted').length
-  }), [actions, pipeline]);
+    contacted: contactedStartupIds.length
+  }), [viewedStartupIds, pipeline, contactedStartupIds]);
 
   const isInvestor = userProfile?.user_type === 'investor';
+
+  const tabs = [
+    { id: 'for_you', label: 'For You', icon: TrendingUp },
+    { id: 'new', label: 'New', icon: Sparkles },
+    { id: 'viewed', label: 'Viewed', icon: Eye, count: stats.viewed },
+    { id: 'saved', label: 'Saved', icon: Bookmark, count: stats.saved },
+    { id: 'contacted', label: 'Contacted', icon: MessageCircle, count: stats.contacted }
+  ];
+
+  const getEmptyMessage = () => {
+    switch (activeTab) {
+      case 'saved': return 'No saved startups yet';
+      case 'viewed': return 'No viewed startups yet';
+      case 'contacted': return "You haven't contacted any founders yet";
+      default: return 'No startups match your criteria';
+    }
+  };
 
   if (!user) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
@@ -138,10 +206,24 @@ export default function InvestorDashboard() {
             </div>
             <button onClick={() => navigate(createPageUrl('InvestorProfile'))} className="flex items-center gap-2 px-4 py-2 bg-[#18181B] text-white text-sm font-semibold rounded-xl hover:bg-[#27272A]"><Bell className="w-4 h-4" />Preferences</button>
           </div>
-          <div className="flex gap-2">
-            {[{ id: 'for_you', label: 'For You', icon: TrendingUp }, { id: 'new', label: 'New', icon: Eye }, { id: 'saved', label: 'Saved', icon: Bookmark }].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold ${activeTab === tab.id ? 'bg-[#6366F1] text-white' : 'bg-[#18181B] text-[#8E8E93] hover:bg-[#27272A]'}`}>
-                <tab.icon className="w-4 h-4" />{tab.label}{tab.id === 'saved' && pipeline.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{pipeline.length}</span>}
+          
+          {/* Tabs */}
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            {tabs.map(tab => (
+              <button 
+                key={tab.id} 
+                onClick={() => setActiveTab(tab.id)} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors ${
+                  activeTab === tab.id 
+                    ? 'bg-[#6366F1] text-white' 
+                    : 'bg-[#18181B] text-[#8E8E93] hover:bg-[#27272A]'
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+                {tab.count > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{tab.count}</span>
+                )}
               </button>
             ))}
           </div>
@@ -170,20 +252,43 @@ export default function InvestorDashboard() {
           </select>
         </div>
 
+        {/* Clickable Stats */}
         <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4"><div className="text-[#8E8E93] text-sm mb-1">Viewed</div><div className="text-white text-2xl font-bold">{stats.viewed}</div></div>
-          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4"><div className="text-[#8E8E93] text-sm mb-1">Saved</div><div className="text-white text-2xl font-bold">{stats.saved}</div></div>
-          <div className="bg-[#0A0A0A] border border-[#18181B] rounded-xl p-4"><div className="text-[#8E8E93] text-sm mb-1">Contacted</div><div className="text-white text-2xl font-bold">{stats.contacted}</div></div>
+          <button 
+            onClick={() => setActiveTab('viewed')} 
+            className={`bg-[#0A0A0A] border rounded-xl p-4 text-left transition-colors ${activeTab === 'viewed' ? 'border-[#6366F1]' : 'border-[#18181B] hover:border-[#27272A]'}`}
+          >
+            <div className="text-[#8E8E93] text-sm mb-1">Viewed</div>
+            <div className="text-white text-2xl font-bold">{stats.viewed}</div>
+          </button>
+          <button 
+            onClick={() => setActiveTab('saved')} 
+            className={`bg-[#0A0A0A] border rounded-xl p-4 text-left transition-colors ${activeTab === 'saved' ? 'border-[#6366F1]' : 'border-[#18181B] hover:border-[#27272A]'}`}
+          >
+            <div className="text-[#8E8E93] text-sm mb-1">Saved</div>
+            <div className="text-white text-2xl font-bold">{stats.saved}</div>
+          </button>
+          <button 
+            onClick={() => setActiveTab('contacted')} 
+            className={`bg-[#0A0A0A] border rounded-xl p-4 text-left transition-colors ${activeTab === 'contacted' ? 'border-[#6366F1]' : 'border-[#18181B] hover:border-[#27272A]'}`}
+          >
+            <div className="text-[#8E8E93] text-sm mb-1">Contacted</div>
+            <div className="text-white text-2xl font-bold">{stats.contacted}</div>
+          </button>
         </div>
 
         {filteredStartups.length === 0 ? (
-          <div className="text-center py-12"><p className="text-[#8E8E93] mb-4">{activeTab === 'saved' ? 'No saved startups yet' : 'No startups match your criteria'}</p>
-            {activeTab === 'saved' && <button onClick={() => setActiveTab('for_you')} className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl">Discover Startups</button>}
+          <div className="text-center py-12">
+            <p className="text-[#8E8E93] mb-4">{getEmptyMessage()}</p>
+            {(activeTab === 'saved' || activeTab === 'viewed' || activeTab === 'contacted') && (
+              <button onClick={() => setActiveTab('for_you')} className="px-6 py-3 bg-[#6366F1] text-white font-semibold rounded-xl">Discover Startups</button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredStartups.map(startup => {
               const isSaved = pipeline.some(p => p.startup_id === startup.id);
+              const isContacted = contactedStartupIds.includes(startup.id);
               return (
                 <div key={startup.id} className="relative overflow-hidden rounded-xl bg-[#18181B] group" style={{ aspectRatio: '4/5' }}>
                   <button onClick={() => setSelectedPitch(startup)} className="w-full h-full">
@@ -195,6 +300,7 @@ export default function InvestorDashboard() {
                       <div className="flex items-center gap-2 mt-2">
                         {startup.category && <span className="px-2 py-0.5 bg-white/10 rounded-full text-white/60 text-xs">{startup.category}</span>}
                         {startup.stage && <span className="px-2 py-0.5 bg-[#6366F1]/20 rounded-full text-[#6366F1] text-xs">{startup.stage}</span>}
+                        {isContacted && <span className="px-2 py-0.5 bg-[#22C55E]/20 rounded-full text-[#22C55E] text-xs">Contacted</span>}
                       </div>
                     </div>
                   </button>
