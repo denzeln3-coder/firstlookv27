@@ -156,8 +156,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
           </p>
           <div className="flex items-center gap-1.5">
             <Play className="w-3 h-3 text-white/80 fill-white/80" />
-            <span className="text-white/70 text-[11px] font-medium">{pitch.upvote_count || 0}</span>
-          </div>
+<span className="text-white/70 text-[11px] font-medium">{pitch.view_count || 0}</span>          </div>
         </div>
       </div>
     </button>

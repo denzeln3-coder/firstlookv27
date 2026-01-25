@@ -34,6 +34,9 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
           watch_time_seconds: 0,
           completed: false
         });
+
+        // Increment view count
+        await supabase.from('startups').update({ view_count: (pitch.view_count || 0) + 1 }).eq('id', pitch.id);
       } catch (error) {
         console.error('Failed to track view:', error);
       }
