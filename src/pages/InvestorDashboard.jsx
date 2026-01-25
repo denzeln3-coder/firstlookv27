@@ -73,7 +73,7 @@ export default function InvestorDashboard() {
     queryFn: async () => {
       const { data } = await supabase
         .from('pitch_views')
-        .select('startup_id, created_at')
+        .select('pitch_id, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       return data || [];
@@ -123,7 +123,7 @@ export default function InvestorDashboard() {
 
   // Get unique viewed startup IDs
   const viewedStartupIds = useMemo(() => {
-    return [...new Set(viewedPitches.map(v => v.startup_id))];
+    return [...new Set(viewedPitches.map(v => v.pitch_id))];
   }, [viewedPitches]);
 
   const filteredStartups = useMemo(() => {

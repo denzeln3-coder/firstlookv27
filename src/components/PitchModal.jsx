@@ -32,7 +32,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         await supabase.from('pitch_views').insert({
-          startup_id: pitch.id,
+          pitch_id: pitch.id,
           user_id: user?.id || null,
           watch_time_seconds: 0,
           completed: false
@@ -55,7 +55,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       if (watchTime > 1) {
         supabase.auth.getUser().then(({ data: { user } }) => {
           supabase.from('pitch_views').insert({
-            startup_id: pitch.id,
+            pitch_id: pitch.id,
             user_id: user?.id || null,
             watch_time_seconds: watchTime,
             completed: watchTime >= 15
@@ -259,7 +259,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
     
     try {
       await supabase.from('comments').insert({
-        startup_id: pitch.id,
+        pitch_id: pitch.id,
         user_id: user.id,
         content: commentText.trim()
       });
@@ -322,7 +322,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
         .from('investor_notes')
         .upsert({
           investor_id: user.id,
-          startup_id: pitch.id,
+          pitch_id: pitch.id,
           notes: investorNotes,
           status: investorStatus,
           updated_at: new Date().toISOString()
@@ -353,7 +353,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
         .from('investor_notes')
         .upsert({
           investor_id: user.id,
-          startup_id: pitch.id,
+          pitch_id: pitch.id,
           status: newStatus,
           notes: investorNotes,
           updated_at: new Date().toISOString()
@@ -392,7 +392,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
         await supabase.from('intro_requests').insert({
           investor_id: user.id,
           founder_id: pitch.founder_id,
-          startup_id: pitch.id,
+          pitch_id: pitch.id,
           message: message || ''
         });
         toast.success('Intro request sent!');
@@ -402,7 +402,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
 
     await supabase.from('investor_actions').insert({
       investor_id: user.id,
-      startup_id: pitch.id,
+      pitch_id: pitch.id,
       action_type: actionType
     });
 
@@ -418,7 +418,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
   const handlePass = async () => {
     await supabase.from('investor_actions').insert({
       investor_id: user.id,
-      startup_id: pitch.id,
+      pitch_id: pitch.id,
       action_type: 'passed',
       feedback: passFeedback || null
     });
