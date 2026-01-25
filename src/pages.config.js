@@ -35,6 +35,7 @@ import UserTypeSettings from './pages/UserTypeSettings';
 import VideoEditor from './pages/VideoEditor';
 import Community from './pages/Community';
 import ChannelDetail from './pages/ChannelDetail';
+import CreatorStudio from './pages/CreatorStudio';
 import __Layout from './Layout.jsx';
 
 export const PAGES = {
@@ -75,6 +76,7 @@ export const PAGES = {
     "VideoEditor": VideoEditor,
     "Community": Community,
     "ChannelDetail": ChannelDetail,
+    "CreatorStudio": CreatorStudio,
 }
 
 export const pagesConfig = {
