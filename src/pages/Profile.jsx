@@ -205,6 +205,8 @@ export default function Profile() {
 
   const deletePitchMutation = useMutation({
     mutationFn: async (pitchId) => {
+      await supabase.from('early_access_requests').delete().eq('startup_id', pitchId);
+      await supabase.from('intro_requests').delete().eq('pitch_id', pitchId);
       await supabase.from('upvotes').delete().eq('startup_id', pitchId);
       await supabase.from('comments').delete().eq('startup_id', pitchId);
       await supabase.from('bookmarks').delete().eq('pitch_id', pitchId);
