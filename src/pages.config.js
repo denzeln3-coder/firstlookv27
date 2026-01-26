@@ -11,6 +11,7 @@ import ForumHome from './pages/ForumHome';
 import ForumThreadDetail from './pages/ForumThreadDetail';
 import FounderProfile from './pages/FounderProfile';
 import Home from './pages/Home';
+import HunterDashboard from './pages/HunterDashboard';
 import IntegrationSettings from './pages/IntegrationSettings';
 import IntroRequests from './pages/IntroRequests';
 import InvestorDashboard from './pages/InvestorDashboard';
@@ -52,6 +53,7 @@ export const PAGES = {
     "ForumThreadDetail": ForumThreadDetail,
     "FounderProfile": FounderProfile,
     "Home": Home,
+    "HunterDashboard": HunterDashboard,
     "IntegrationSettings": IntegrationSettings,
     "IntroRequests": IntroRequests,
     "InvestorDashboard": InvestorDashboard,

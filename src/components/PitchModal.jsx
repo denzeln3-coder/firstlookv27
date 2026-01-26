@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import ReportModal from './ReportModal';
 import VideoPlayer from './VideoPlayer';
 
-export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
+export default function PitchModal({ pitch, onClose, isInvestorView = false, isHunterView = false }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
@@ -24,6 +24,10 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
   const [investorNotes, setInvestorNotes] = useState('');
   const [investorStatus, setInvestorStatus] = useState(null);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [hunterRating, setHunterRating] = useState(0);
+  const [hunterFeedback, setHunterFeedback] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [existingFeedback, setExistingFeedback] = useState(null);
   const viewStartTime = React.useRef(Date.now());
 
   // Track view on mount
@@ -339,6 +343,33 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
       toast.error('Failed to save notes');
     } finally {
       setSavingNotes(false);
+    }
+  };
+
+  // Hunter feedback submit
+  const handleSubmitFeedback = async () => {
+    if (!user || hunterRating === 0) {
+      toast.error("Please select a rating");
+      return;
+    }
+    setSubmittingFeedback(true);
+    try {
+      const { error } = await supabase.from("startup_feedback").upsert({
+        user_id: user.id,
+        startup_id: pitch.id,
+        rating: hunterRating,
+        feedback: hunterFeedback,
+        created_at: new Date().toISOString()
+      }, { onConflict: "user_id,startup_id" });
+      if (error) throw error;
+      toast.success("Feedback submitted!");
+      setExistingFeedback({ rating: hunterRating, feedback: hunterFeedback });
+      queryClient.invalidateQueries({ queryKey: ["hunterFeedback"] });
+    } catch (error) {
+      console.error("Failed to submit feedback:", error);
+      toast.error("Failed to submit feedback");
+    } finally {
+      setSubmittingFeedback(false);
     }
   };
 
@@ -959,6 +990,38 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false }) {
         </div>
       )}
 
+
+      {/* Hunter Feedback Section */}
+      {isHunterView && (
+        <div className="absolute bottom-20 left-4 right-4 bg-[#18181B]/95 backdrop-blur-sm border border-[#27272A] rounded-2xl p-4 z-10">
+          <h4 className="text-white font-semibold mb-3">Rate this startup</h4>
+          <div className="flex gap-2 mb-3">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => setHunterRating(star)}
+                className={`text-2xl transition ${hunterRating >= star ? "text-amber-500" : "text-gray-600"}`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={hunterFeedback}
+            onChange={(e) => setHunterFeedback(e.target.value)}
+            placeholder="Share your thoughts (optional)..."
+            className="w-full px-3 py-2 bg-[#27272A] text-white border border-[#3F3F46] rounded-xl focus:outline-none focus:border-amber-500 resize-none text-sm mb-3"
+            rows={2}
+          />
+          <button
+            onClick={handleSubmitFeedback}
+            disabled={submittingFeedback || hunterRating === 0}
+            className="w-full py-2.5 bg-amber-500 text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submittingFeedback ? "Submitting..." : existingFeedback ? "Update Feedback" : "Submit Feedback"}
+          </button>
+        </div>
+      )}
       {/* Pass Modal */}
       {showPassModal && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-20">

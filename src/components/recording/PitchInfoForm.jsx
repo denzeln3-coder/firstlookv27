@@ -57,7 +57,7 @@ export default function PitchInfoForm({ initialData, onSubmit, onBack, onUploadP
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
-    const newValue = type === 'number' ? parseInt(value) || 1 : value;
+    const newValue = type === 'number' ? (value === '' ? '' : parseInt(value)) : value;
     setFormData(prev => ({ ...prev, [name]: newValue }));
     
     if (touched[name]) {
