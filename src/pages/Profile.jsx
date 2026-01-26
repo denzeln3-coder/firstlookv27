@@ -214,7 +214,7 @@ export default function Profile() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['userPitches', profileUser?.id] });
+      queryClient.refetchQueries({ queryKey: ['userPitches'] });
       queryClient.invalidateQueries({ queryKey: ['pitches'] });
       setShowDeleteConfirm(false);
       setDeletingPitch(null);
