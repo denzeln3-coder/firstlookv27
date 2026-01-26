@@ -207,8 +207,8 @@ export default function Profile() {
     mutationFn: async (pitchId) => {
       await supabase.from('upvotes').delete().eq('startup_id', pitchId);
       await supabase.from('comments').delete().eq('startup_id', pitchId);
-      await supabase.from('bookmarks').delete().eq('startup_id', pitchId);
-      await supabase.from('pitch_views').delete().eq('startup_id', pitchId);
+      await supabase.from('bookmarks').delete().eq('pitch_id', pitchId);
+      await supabase.from('pitch_views').delete().eq('pitch_id', pitchId);
       
       const { error } = await supabase.from('startups').delete().eq('id', pitchId);
       if (error) throw error;
