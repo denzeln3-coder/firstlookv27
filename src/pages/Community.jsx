@@ -47,7 +47,7 @@ export default function Community() {
   const { data: channels = [], isLoading: channelsLoading } = useQuery({
     queryKey: ['channels'],
     queryFn: async () => {
-      const { data } = await supabase.from('channels').select('*').order('member_count', { ascending: false });
+      const { data } = await supabase.from('channels').select('*, creator:users(id, full_name, avatar_url)').order('member_count', { ascending: false });
       return data || [];
     }
   });
@@ -230,8 +230,8 @@ export default function Community() {
                       <p className="text-[#8E8E93] text-[13px] line-clamp-1 mt-0.5">{channel.description}</p>
                       <div className="flex items-center gap-3 mt-2">
                         <span className="text-[#636366] text-[12px] flex items-center gap-1"><Users className="w-3 h-3" />{channel.member_count || 0} members</span>
-                        {channel.created_by && channel.created_by === user?.id && (
-                          <span className="text-[#6366F1] text-[10px] font-medium">Your channel</span>
+                        {channel.creator && (
+                          <span className="text-[#8E8E93] text-[12px]">by {channel.creator?.full_name || 'Anonymous'}</span>
                         )}
                       </div>
                     </div>
