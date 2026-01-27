@@ -448,52 +448,8 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
         <div className="absolute inset-0 border-4 border-[#FBBF24] z-10 pointer-events-none" />
       )}
 
-      {/* Timer - Always visible at top */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
-        <div className="px-6 py-3 bg-black/80 backdrop-blur-md rounded-2xl border border-white/10">
-          <div className="flex items-center gap-4">
-            {/* Recording indicator */}
-            <div className="flex items-center gap-2">
-              {recordingState === 'ready' ? (
-                <div className="w-3 h-3 rounded-full bg-[#71717A]" />
-              ) : recordingState === 'recording' ? (
-                <div className="w-3 h-3 rounded-full bg-[#EF4444] animate-pulse" />
-              ) : recordingState === 'paused' ? (
-                <div className="w-3 h-3 rounded-full bg-[#FBBF24]" />
-              ) : (
-                <div className="w-3 h-3 rounded-full bg-[#6366F1] animate-spin" />
-              )}
-              <span className="text-white text-sm font-medium">
-                {recordingState === 'ready' ? 'READY' : 
-                 recordingState === 'recording' ? 'REC' : 
-                 recordingState === 'paused' ? 'PAUSED' : 'PROCESSING'}
-              </span>
-            </div>
-            
-            {/* Time display */}
-            <div className="text-white text-3xl font-bold font-mono">
-              {formatTime(elapsedTime)}
-            </div>
-            
-            {/* Max time */}
-            <div className="text-[#71717A] text-sm">
-              / {formatTime(MAX_TIME)}
-            </div>
-          </div>
-        </div>
-
-        {/* Time remaining warning */}
-        {recordingState !== 'ready' && getTimeRemaining() <= 30 && getTimeRemaining() > 0 && (
-          <div className="mt-2 px-3 py-1 bg-[#EF4444]/20 border border-[#EF4444]/40 rounded-full text-center">
-            <span className="text-[#EF4444] text-xs font-medium">
-              {getTimeRemaining()}s remaining
-            </span>
-          </div>
-        )}
-      </div>
-
       {/* Main Content Area */}
-      <div className="flex-1 relative pt-24">
+      <div className="flex-1 relative flex flex-col">
         {recordingType === 'video' ? (
           // Camera recording - full screen preview
           <video
@@ -505,44 +461,98 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
           />
         ) : (
           // Screen recording
-          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#18181B] to-[#09090B]">
+          <div className="absolute inset-0 flex flex-col bg-gradient-to-br from-[#18181B] to-[#09090B]">
             {recordingState === 'ready' ? (
               // Ready state - prompt to start
-              <div className="text-center px-6 max-w-md">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-[#6366F1]/20 flex items-center justify-center">
-                  <Monitor className="w-10 h-10 text-[#6366F1]" />
-                </div>
-                <h2 className="text-white text-2xl font-bold mb-3">Record Your Screen</h2>
-                <p className="text-[#A1A1AA] text-base mb-6">
-                  Show your product in action. A browser popup will appear to select which screen or window to share.
-                </p>
-                
-                {/* Info cards - stacked vertically with proper spacing */}
-                <div className="space-y-3 mb-8">
-                  <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
-                    <div className="w-8 h-8 rounded-full bg-[#22C55E]/20 flex items-center justify-center flex-shrink-0">
-                      <Mic className="w-4 h-4 text-[#22C55E]" />
+              <div className="flex-1 flex flex-col">
+                {/* Timer section at top */}
+                <div className="pt-6 pb-4 flex justify-center">
+                  <div className="px-6 py-3 bg-black/60 backdrop-blur-md rounded-2xl border border-white/10">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-[#71717A]" />
+                        <span className="text-white text-sm font-medium">READY</span>
+                      </div>
+                      <div className="text-white text-3xl font-bold font-mono">0:00</div>
+                      <div className="text-[#71717A] text-sm">/ 2:00</div>
                     </div>
-                    <span className="text-[#D4D4D8] text-sm text-left">Audio will be captured from your mic</span>
                   </div>
-                  <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
-                    <div className="w-8 h-8 rounded-full bg-[#22C55E]/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[#22C55E] text-sm font-bold">2m</span>
+                </div>
+                
+                {/* Main content centered */}
+                <div className="flex-1 flex items-center justify-center px-6">
+                  <div className="text-center max-w-sm">
+                    <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-[#6366F1]/20 flex items-center justify-center">
+                      <Monitor className="w-10 h-10 text-[#6366F1]" />
                     </div>
-                    <span className="text-[#D4D4D8] text-sm text-left">Maximum 2 minutes recording time</span>
+                    <h2 className="text-white text-2xl font-bold mb-3">Record Your Screen</h2>
+                    <p className="text-[#A1A1AA] text-base mb-6">
+                      Show your product in action. A browser popup will appear to select which screen or window to share.
+                    </p>
+                    
+                    {/* Info cards - stacked vertically with proper spacing */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
+                        <div className="w-8 h-8 rounded-full bg-[#22C55E]/20 flex items-center justify-center flex-shrink-0">
+                          <Mic className="w-4 h-4 text-[#22C55E]" />
+                        </div>
+                        <span className="text-[#D4D4D8] text-sm text-left">Audio will be captured from your mic</span>
+                      </div>
+                      <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
+                        <div className="w-8 h-8 rounded-full bg-[#22C55E]/20 flex items-center justify-center flex-shrink-0">
+                          <span className="text-[#22C55E] text-sm font-bold">2m</span>
+                        </div>
+                        <span className="text-[#D4D4D8] text-sm text-left">Maximum 2 minutes recording time</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             ) : (
-              // Recording/paused state - show screen preview
-              <div className="w-full h-full p-4">
-                <video
-                  ref={screenPreviewRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-contain rounded-lg"
-                />
+              // Recording/paused state - show screen preview with timer
+              <div className="flex-1 flex flex-col">
+                {/* Timer section at top */}
+                <div className="pt-6 pb-4 flex flex-col items-center">
+                  <div className="px-6 py-3 bg-black/60 backdrop-blur-md rounded-2xl border border-white/10">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        {recordingState === 'recording' ? (
+                          <div className="w-3 h-3 rounded-full bg-[#EF4444] animate-pulse" />
+                        ) : recordingState === 'paused' ? (
+                          <div className="w-3 h-3 rounded-full bg-[#FBBF24]" />
+                        ) : (
+                          <div className="w-3 h-3 rounded-full bg-[#6366F1]" />
+                        )}
+                        <span className="text-white text-sm font-medium">
+                          {recordingState === 'recording' ? 'REC' : 
+                           recordingState === 'paused' ? 'PAUSED' : 'PROCESSING'}
+                        </span>
+                      </div>
+                      <div className="text-white text-3xl font-bold font-mono">{formatTime(elapsedTime)}</div>
+                      <div className="text-[#71717A] text-sm">/ {formatTime(MAX_TIME)}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Time remaining warning */}
+                  {getTimeRemaining() <= 30 && getTimeRemaining() > 0 && (
+                    <div className="mt-2 px-3 py-1 bg-[#EF4444]/20 border border-[#EF4444]/40 rounded-full">
+                      <span className="text-[#EF4444] text-xs font-medium">
+                        {getTimeRemaining()}s remaining
+                      </span>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Screen preview */}
+                <div className="flex-1 p-4">
+                  <video
+                    ref={screenPreviewRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-contain rounded-lg"
+                  />
+                </div>
               </div>
             )}
           </div>
