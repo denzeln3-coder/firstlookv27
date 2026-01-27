@@ -33,7 +33,7 @@ export default function ChannelDetail() {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
         setUser({ ...user, ...profile });
       }
     };
@@ -79,7 +79,7 @@ export default function ChannelDetail() {
           
           if (userIds.length > 0) {
             const { data: profiles, error: profileError } = await supabase
-              .from('profiles')
+              .from('users')
               .select('id, display_name, username, avatar_url')
               .in('id', userIds);
             
@@ -383,7 +383,7 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
       
       if (userIds.length > 0) {
         const { data: profiles, error: profileError } = await supabase
-          .from('profiles')
+          .from('users')
           .select('id, display_name, username, avatar_url')
           .in('id', userIds);
         
