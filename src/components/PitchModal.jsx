@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { X, ArrowUp, MessageCircle, Share2, Bookmark, Link2, Twitter, Flag, Send, ExternalLink, Users, MapPin, TrendingUp, DollarSign, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import ReportModal from './ReportModal';
 import VideoPlayer from './VideoPlayer';
+import { HeartAnimation } from './HeartAnimation';
 
 export default function PitchModal({ pitch, onClose, isInvestorView = false, isHunterView = false }) {
   const navigate = useNavigate();
@@ -28,10 +29,15 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
   const [hunterFeedback, setHunterFeedback] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [existingFeedback, setExistingFeedback] = useState(null);
-  const viewStartTime = React.useRef(Date.now());
+  
+  // Heart animation state
+  const [showHeartAnimation, setShowHeartAnimation] = useState(false);
+  const lastTapRef = useRef(0);
+  
+  const viewStartTime = useRef(Date.now());
 
   // Track view on mount
-  React.useEffect(() => {
+  useEffect(() => {
     const trackView = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -53,7 +59,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
   }, [pitch.id]);
 
   // Track watch time on unmount
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       const watchTime = Math.round((Date.now() - viewStartTime.current) / 1000);
       if (watchTime > 1) {
@@ -70,7 +76,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
   }, [pitch.id]);
 
   // Sync local upvote count with pitch prop
-  React.useEffect(() => {
+  useEffect(() => {
     setLocalUpvoteCount(pitch.upvote_count || 0);
   }, [pitch.upvote_count]);
 
@@ -207,6 +213,14 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
         await supabase.from('upvotes').insert({ user_id: user.id, startup_id: pitch.id });
         await supabase.from('startups').update({ upvote_count: localUpvoteCount + 1 }).eq('id', pitch.id);
         setLocalUpvoteCount(prev => prev + 1);
+        
+        // Show heart animation on upvote
+        setShowHeartAnimation(true);
+        
+        // Haptic feedback
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
       }
     },
     onSuccess: () => {
@@ -240,6 +254,28 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       return;
     }
     upvoteMutation.mutate();
+  };
+
+  // Double-tap to upvote handler
+  const handleDoubleTap = (e) => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected
+      if (!hasUpvoted && user) {
+        handleUpvote();
+      } else if (!user) {
+        setShowLoginPrompt(true);
+      } else {
+        // Already upvoted, just show animation
+        setShowHeartAnimation(true);
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+      }
+    }
+    lastTapRef.current = now;
   };
 
   const handleBookmark = async () => {
@@ -512,7 +548,13 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
 
   return (
     <div className="fixed inset-0 bg-[#000000] z-40">
-      <div className="relative w-full h-full">
+      {/* Heart Animation Overlay */}
+      <HeartAnimation 
+        show={showHeartAnimation} 
+        onComplete={() => setShowHeartAnimation(false)} 
+      />
+      
+      <div className="relative w-full h-full" onClick={handleDoubleTap}>
         <VideoPlayer
           videoUrl={pitch.video_url}
           poster={pitch.thumbnail_url}
@@ -524,12 +566,17 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
 
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.8) 100%)' }} />
 
+        {/* Double-tap hint - shows briefly */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-0 animate-pulse">
+          <span className="text-white/50 text-sm">Double-tap to like</span>
+        </div>
+
         {/* Top buttons */}
         <div className="absolute top-4 right-4 z-20 flex gap-2">
-          <button onClick={() => setShowReportModal(true)} className="w-11 h-11 rounded-full bg-[rgba(0,0,0,0.5)] backdrop-blur-sm flex items-center justify-center text-white hover:bg-[rgba(0,0,0,0.7)] transition">
+          <button onClick={(e) => { e.stopPropagation(); setShowReportModal(true); }} className="w-11 h-11 rounded-full bg-[rgba(0,0,0,0.5)] backdrop-blur-sm flex items-center justify-center text-white hover:bg-[rgba(0,0,0,0.7)] transition">
             <Flag className="w-5 h-5" />
           </button>
-          <button onClick={onClose} className="w-11 h-11 rounded-full bg-[rgba(0,0,0,0.5)] backdrop-blur-sm flex items-center justify-center text-white hover:bg-[rgba(0,0,0,0.7)] transition">
+          <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="w-11 h-11 rounded-full bg-[rgba(0,0,0,0.5)] backdrop-blur-sm flex items-center justify-center text-white hover:bg-[rgba(0,0,0,0.7)] transition">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -546,7 +593,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
         )}
 
         {/* Bottom left - Startup info */}
-        <div className="absolute bottom-20 left-4 right-20 z-10">
+        <div className="absolute bottom-20 left-4 right-20 z-10" onClick={(e) => e.stopPropagation()}>
           <button onClick={() => pitch.founder_id && navigate(createPageUrl('Profile') + `?userId=${pitch.founder_id}`)} className="text-left hover:opacity-80 transition">
             <div className="flex items-center gap-3 mb-2">
               {pitch.logo_url ? (
@@ -607,56 +654,61 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
         </div>
 
         {/* Right side actions */}
-        <div className="absolute bottom-28 right-4 flex flex-col gap-4 z-10">
-          <button onClick={handleUpvote} className="flex flex-col items-center">
-            <div className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all ${hasUpvoted ? 'bg-[#34D399]/20' : 'bg-black/50 hover:bg-black/70'}`}>
-              <ArrowUp className="w-6 h-6" style={{ color: hasUpvoted ? '#34D399' : 'white', fill: hasUpvoted ? '#34D399' : 'none' }} />
+        <div className="absolute bottom-28 right-4 flex flex-col gap-4 z-10" onClick={(e) => e.stopPropagation()}>
+          <button onClick={handleUpvote} className="flex flex-col items-center group">
+            <div className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all transform group-active:scale-90 ${hasUpvoted ? 'bg-[#34D399]/20' : 'bg-black/50 hover:bg-black/70'}`}>
+              <ArrowUp 
+                className={`w-6 h-6 transition-transform ${hasUpvoted ? 'scale-110' : 'group-hover:scale-110'}`} 
+                style={{ color: hasUpvoted ? '#34D399' : 'white', fill: hasUpvoted ? '#34D399' : 'none' }} 
+              />
             </div>
-            <span className="text-white text-[12px] font-semibold mt-1">{localUpvoteCount}</span>
+            <span className={`text-[12px] font-semibold mt-1 transition-colors ${hasUpvoted ? 'text-[#34D399]' : 'text-white'}`}>
+              {localUpvoteCount}
+            </span>
           </button>
 
-          <button onClick={handleComment} className="flex flex-col items-center">
-            <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition">
+          <button onClick={handleComment} className="flex flex-col items-center group">
+            <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition transform group-active:scale-90">
               <MessageCircle className="w-6 h-6 text-white" />
             </div>
             <span className="text-white text-[12px] font-semibold mt-1">{comments.length}</span>
           </button>
 
-          <button onClick={() => setShowShareMenu(true)} className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition">
+          <button onClick={() => setShowShareMenu(true)} className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition active:scale-90">
             <Share2 className="w-6 h-6 text-white" />
           </button>
 
           {/* FIXED: Bookmark fills white when bookmarked */}
-          <button onClick={handleBookmark} className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all ${hasBookmarked ? 'bg-white/20' : 'bg-black/50 hover:bg-black/70'}`}>
+          <button onClick={handleBookmark} className={`w-12 h-12 rounded-full backdrop-blur-sm flex items-center justify-center transition-all active:scale-90 ${hasBookmarked ? 'bg-white/20' : 'bg-black/50 hover:bg-black/70'}`}>
             <Bookmark className="w-6 h-6 text-white" fill={hasBookmarked ? 'white' : 'none'} />
           </button>
 
           {/* Notes button for investors */}
           {isInvestorView && (
-            <button onClick={() => setShowInvestorActions(true)} className="w-12 h-12 rounded-full bg-[#6366F1]/50 backdrop-blur-sm flex items-center justify-center hover:bg-[#6366F1]/70 transition">
+            <button onClick={() => setShowInvestorActions(true)} className="w-12 h-12 rounded-full bg-[#6366F1]/50 backdrop-blur-sm flex items-center justify-center hover:bg-[#6366F1]/70 transition active:scale-90">
               <FileText className="w-6 h-6 text-white" />
             </button>
           )}
         </div>
 
         {/* Bottom CTA buttons */}
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3 px-4 z-10">
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3 px-4 z-10" onClick={(e) => e.stopPropagation()}>
           {isInvestorView ? (
             <>
-              <button onClick={() => setShowInvestorActions(true)} className="flex-1 max-w-[200px] px-6 py-3 bg-white text-black text-[14px] font-semibold rounded-full hover:bg-gray-100 transition shadow-lg">
+              <button onClick={() => setShowInvestorActions(true)} className="flex-1 max-w-[200px] px-6 py-3 bg-white text-black text-[14px] font-semibold rounded-full hover:bg-gray-100 transition shadow-lg active:scale-95">
                 Investor Actions
               </button>
-              <button onClick={handleWatchDemo} className="px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-full hover:brightness-110 transition shadow-lg">
+              <button onClick={handleWatchDemo} className="px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-full hover:brightness-110 transition shadow-lg active:scale-95">
                 Watch Demo
               </button>
             </>
           ) : (
             <>
-              <button onClick={handleWatchDemo} className="flex-1 max-w-[200px] px-6 py-3 bg-white text-black text-[14px] font-semibold rounded-full hover:bg-gray-100 transition shadow-lg">
+              <button onClick={handleWatchDemo} className="flex-1 max-w-[200px] px-6 py-3 bg-white text-black text-[14px] font-semibold rounded-full hover:bg-gray-100 transition shadow-lg active:scale-95">
                 Watch Demo
               </button>
               {pitch.founder_id && pitch.founder_id !== user?.id && (
-                <button onClick={handleMessageFounder} className="px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-full hover:brightness-110 transition shadow-lg flex items-center gap-2">
+                <button onClick={handleMessageFounder} className="px-6 py-3 bg-[#6366F1] text-white text-[14px] font-semibold rounded-full hover:brightness-110 transition shadow-lg flex items-center gap-2 active:scale-95">
                   <Send className="w-4 h-4" />
                   Message
                 </button>
@@ -670,7 +722,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {showInfoCard && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowInfoCard(false)}>
           <div 
-            className="absolute bottom-20 left-0 right-0 bg-[#18181B] rounded-t-3xl p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[60vh] overflow-y-auto"
+            className="absolute bottom-20 left-0 right-0 bg-[#18181B] rounded-t-3xl p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[60vh] overflow-y-auto slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-6" />
@@ -818,7 +870,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {/* Comments Modal */}
       {showComments && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-[60]" onClick={() => setShowComments(false)}>
-          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] flex flex-col border-t border-[rgba(255,255,255,0.1)]" style={{ maxHeight: '60vh', marginBottom: '80px' }} onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] flex flex-col border-t border-[rgba(255,255,255,0.1)] slide-up" style={{ maxHeight: '60vh', marginBottom: '80px' }} onClick={(e) => e.stopPropagation()}>
             <div className="p-6 border-b border-[rgba(255,255,255,0.1)]">
               <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-4" />
               <h3 className="text-white text-xl font-bold">{comments.length} Comments</h3>
@@ -860,7 +912,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
                   autoFocus
                   className="flex-1 px-4 py-3 bg-[#3F3F46] text-white rounded-xl border border-[rgba(255,255,255,0.1)] focus:outline-none focus:ring-2 focus:ring-[#6366F1] placeholder:text-[#A1A1AA]"
                 />
-                <button onClick={submitComment} disabled={!commentText.trim()} className="px-6 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50">
+                <button onClick={submitComment} disabled={!commentText.trim()} className="px-6 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50 active:scale-95">
                   Send
                 </button>
               </div>
@@ -872,23 +924,23 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {/* Share Menu */}
       {showShareMenu && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-20" onClick={() => setShowShareMenu(false)}>
-          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] p-6 pb-8 border-t border-[rgba(255,255,255,0.1)]" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-6" />
             <h3 className="text-white text-xl font-bold mb-6">Share</h3>
             <div className="space-y-3">
-              <button onClick={handleCopyLink} className="w-full flex items-center gap-4 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
+              <button onClick={handleCopyLink} className="w-full flex items-center gap-4 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition active:scale-98">
                 <div className="w-12 h-12 bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] rounded-full flex items-center justify-center">
                   <Link2 className="w-6 h-6 text-white" />
                 </div>
                 <span className="text-white font-medium">Copy Link</span>
               </button>
-              <button onClick={handleShareTwitter} className="w-full flex items-center gap-4 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
+              <button onClick={handleShareTwitter} className="w-full flex items-center gap-4 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition active:scale-98">
                 <div className="w-12 h-12 bg-[#1DA1F2] rounded-full flex items-center justify-center">
                   <Twitter className="w-6 h-6 text-white" fill="white" />
                 </div>
                 <span className="text-white font-medium">Share to Twitter</span>
               </button>
-              <button onClick={handleShareLinkedIn} className="w-full flex items-center gap-4 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
+              <button onClick={handleShareLinkedIn} className="w-full flex items-center gap-4 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition active:scale-98">
                 <div className="w-12 h-12 bg-[#0A66C2] rounded-full flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
@@ -904,12 +956,12 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {/* Login Prompt */}
       {showLoginPrompt && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-20">
-          <div className="bg-[#18181B] border border-[rgba(255,255,255,0.1)] rounded-2xl p-8 max-w-sm mx-4">
+          <div className="bg-[#18181B] border border-[rgba(255,255,255,0.1)] rounded-2xl p-8 max-w-sm mx-4 animate-scale-in">
             <h3 className="text-white text-xl font-bold mb-2">Login Required</h3>
             <p className="text-[#A1A1AA] mb-6">Please log in to interact with pitches.</p>
             <div className="flex gap-3">
-              <button onClick={() => setShowLoginPrompt(false)} className="flex-1 px-4 py-3 bg-[#27272A] text-white rounded-xl hover:bg-[#3F3F46] transition">Cancel</button>
-              <button onClick={() => window.location.href = '/login'} className="flex-1 px-4 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition">Log In</button>
+              <button onClick={() => setShowLoginPrompt(false)} className="flex-1 px-4 py-3 bg-[#27272A] text-white rounded-xl hover:bg-[#3F3F46] transition active:scale-95">Cancel</button>
+              <button onClick={() => window.location.href = '/login'} className="flex-1 px-4 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition active:scale-95">Log In</button>
             </div>
           </div>
         </div>
@@ -920,7 +972,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {/* Investor Actions Modal - Updated with Notes */}
       {showInvestorActions && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-20" onClick={() => setShowInvestorActions(false)}>
-          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[#18181B] rounded-t-3xl w-full max-w-[500px] p-6 pb-8 border-t border-[rgba(255,255,255,0.1)] max-h-[85vh] overflow-y-auto slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-6" />
             <h3 className="text-white text-xl font-bold mb-4">Investor Actions</h3>
             
@@ -930,19 +982,19 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
               <div className="flex gap-2">
                 <button 
                   onClick={() => handleStatusChange('interested')}
-                  className={`flex-1 py-3 rounded-xl font-semibold transition ${investorStatus === 'interested' ? 'bg-[#22C55E] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition active:scale-95 ${investorStatus === 'interested' ? 'bg-[#22C55E] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
                 >
                   ✅ Interested
                 </button>
                 <button 
                   onClick={() => handleStatusChange('watching')}
-                  className={`flex-1 py-3 rounded-xl font-semibold transition ${investorStatus === 'watching' ? 'bg-[#F59E0B] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition active:scale-95 ${investorStatus === 'watching' ? 'bg-[#F59E0B] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
                 >
                   👀 Watching
                 </button>
                 <button 
                   onClick={() => handleStatusChange('passed')}
-                  className={`flex-1 py-3 rounded-xl font-semibold transition ${investorStatus === 'passed' ? 'bg-[#EF4444] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
+                  className={`flex-1 py-3 rounded-xl font-semibold transition active:scale-95 ${investorStatus === 'passed' ? 'bg-[#EF4444] text-white' : 'bg-[#27272A] text-[#8E8E93] hover:bg-[#3F3F46]'}`}
                 >
                   ❌ Pass
                 </button>
@@ -962,7 +1014,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
               <button 
                 onClick={handleSaveNotes}
                 disabled={savingNotes}
-                className="mt-3 w-full py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50"
+                className="mt-3 w-full py-3 bg-[#6366F1] text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50 active:scale-95"
               >
                 {savingNotes ? 'Saving...' : 'Save Notes'}
               </button>
@@ -971,14 +1023,14 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
             {/* Quick Actions */}
             <div className="text-[#8E8E93] text-sm mb-3">Quick Actions</div>
             <div className="space-y-3">
-              <button onClick={() => handleInvestorAction('request_intro')} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
+              <button onClick={() => handleInvestorAction('request_intro')} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition active:scale-98">
                 <div className="w-10 h-10 bg-[#8B5CF6]/20 rounded-full flex items-center justify-center"><span className="text-2xl">📧</span></div>
                 <div className="text-left">
                   <div className="text-white font-semibold">Request Intro</div>
                   <div className="text-[#8E8E93] text-xs">Get founder's contact</div>
                 </div>
               </button>
-              <button onClick={handleMessageFounder} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition">
+              <button onClick={handleMessageFounder} className="w-full flex items-center gap-3 px-4 py-4 bg-[#27272A] hover:bg-[#3F3F46] rounded-xl transition active:scale-98">
                 <div className="w-10 h-10 bg-[#3B82F6]/20 rounded-full flex items-center justify-center"><span className="text-2xl">💬</span></div>
                 <div className="text-left">
                   <div className="text-white font-semibold">Message Founder</div>
@@ -1000,7 +1052,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
               <button
                 key={star}
                 onClick={() => setHunterRating(star)}
-                className={`text-2xl transition ${hunterRating >= star ? "text-amber-500" : "text-gray-600"}`}
+                className={`text-2xl transition transform active:scale-110 ${hunterRating >= star ? "text-amber-500" : "text-gray-600"}`}
               >
                 ★
               </button>
@@ -1016,7 +1068,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
           <button
             onClick={handleSubmitFeedback}
             disabled={submittingFeedback || hunterRating === 0}
-            className="w-full py-2.5 bg-amber-500 text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-2.5 bg-amber-500 text-white font-semibold rounded-xl hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
           >
             {submittingFeedback ? "Submitting..." : existingFeedback ? "Update Feedback" : "Submit Feedback"}
           </button>
@@ -1025,7 +1077,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {/* Pass Modal */}
       {showPassModal && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-20">
-          <div className="bg-[#18181B] border border-[rgba(255,255,255,0.1)] rounded-2xl p-6 max-w-md mx-4">
+          <div className="bg-[#18181B] border border-[rgba(255,255,255,0.1)] rounded-2xl p-6 max-w-md mx-4 animate-scale-in">
             <h3 className="text-white text-xl font-bold mb-2">Pass on this pitch?</h3>
             <p className="text-[#A1A1AA] text-sm mb-4">This will hide it from your feed.</p>
             <textarea
@@ -1036,12 +1088,43 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
               rows={3}
             />
             <div className="flex gap-3">
-              <button onClick={() => { setShowPassModal(false); setPassFeedback(''); }} className="flex-1 px-4 py-3 bg-[#27272A] text-white rounded-xl hover:bg-[#3F3F46] transition">Cancel</button>
-              <button onClick={handlePass} className="flex-1 px-4 py-3 bg-[#EF4444] text-white font-semibold rounded-xl hover:brightness-110 transition">Pass</button>
+              <button onClick={() => { setShowPassModal(false); setPassFeedback(''); }} className="flex-1 px-4 py-3 bg-[#27272A] text-white rounded-xl hover:bg-[#3F3F46] transition active:scale-95">Cancel</button>
+              <button onClick={handlePass} className="flex-1 px-4 py-3 bg-[#EF4444] text-white font-semibold rounded-xl hover:brightness-110 transition active:scale-95">Pass</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Animation styles */}
+      <style jsx>{`
+        @keyframes scale-in {
+          from { 
+            opacity: 0;
+            transform: scale(0.9);
+          }
+          to { 
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-scale-in {
+          animation: scale-in 0.2s ease-out;
+        }
+        
+        @keyframes slide-up {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .slide-up {
+          animation: slide-up 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

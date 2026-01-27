@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
 import UserTypeSelectionModal from './components/UserTypeSelectionModal';
 import BottomNav from './components/BottomNav';
+import { OfflineProvider } from './components/OfflineSupport';
 
 // Pages that should show the bottom nav
 const PAGES_WITH_BOTTOM_NAV = [
@@ -77,7 +78,7 @@ export default function Layout({ children, currentPageName }) {
   };
 
   return (
-    <>
+    <OfflineProvider>
       {showUserTypeSelection && (
         <UserTypeSelectionModal onComplete={handleUserTypeComplete} />
       )}
@@ -338,6 +339,6 @@ export default function Layout({ children, currentPageName }) {
           }
         }}
       />
-    </>
+    </OfflineProvider>
   );
 }
