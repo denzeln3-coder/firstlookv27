@@ -266,20 +266,21 @@ export default function Explore() {
     refetchInterval: false
   });
 
+  // FIXED: Query direct_messages table with correct column names
   const { data: unreadMessagesCount = 0 } = useQuery({
     queryKey: ['unreadMessages', user?.id],
     queryFn: async () => {
       if (!user) return 0;
       const { count, error } = await supabase
-        .from('messages')
+        .from('direct_messages')
         .select('*', { count: 'exact', head: true })
-        .eq('recipient_id', user.id)
-        .eq('is_read', false);
+        .eq('receiver_id', user.id)
+        .eq('read', false);
       return error ? 0 : (count || 0);
     },
     enabled: !!user,
     staleTime: 15000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     refetchInterval: 30000
   });
 
