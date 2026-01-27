@@ -1,7 +1,15 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Play, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 
-export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, poster, startMuted = false, fallbackInitial = '?' }) {
+export default function VideoPlayer({ 
+  videoUrl, 
+  autoPlay = true, 
+  loop = true, 
+  poster, 
+  startMuted = false, 
+  fallbackInitial = '?',
+  aspectRatio = '9/16' // Default to vertical video
+}) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -48,7 +56,6 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
             }
           })
           .catch(() => {
-            // Try muted autoplay
             video.muted = true;
             if (mounted) setIsMuted(true);
             video.play()
@@ -92,7 +99,6 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
     };
     
     const handleWaiting = () => {
-      // Only show loading if we're supposed to be playing
       if (mounted && isPlaying) {
         setIsLoading(true);
       }
@@ -119,7 +125,6 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
           setIsPlaying(false);
           setShowPlayButton(true);
         }
-        // For looping videos, the video element handles it automatically
       }
     };
 
@@ -132,11 +137,6 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
       }
     };
 
-    const handleStalled = () => {
-      // Video stalled, but don't show loading forever
-      console.log('Video stalled');
-    };
-
     video.addEventListener('loadeddata', handleLoadedData);
     video.addEventListener('canplaythrough', handleCanPlayThrough);
     video.addEventListener('play', handlePlay);
@@ -146,14 +146,11 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
     video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleError);
-    video.addEventListener('stalled', handleStalled);
 
-    // Timeout for loading - if it takes too long, hide spinner and show play button
     loadTimeout = setTimeout(() => {
       if (mounted && isLoading && !isLoaded) {
         setIsLoading(false);
         setShowPlayButton(true);
-        // Don't set error, just let user try to play manually
       }
     }, 8000);
 
@@ -169,7 +166,6 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
       video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('error', handleError);
-      video.removeEventListener('stalled', handleStalled);
     };
   }, [videoUrl, autoPlay, startMuted, hasValidUrl, loop]);
 
@@ -218,69 +214,78 @@ export default function VideoPlayer({ videoUrl, autoPlay = true, loop = true, po
   }, []);
 
   return (
-    <div className="relative w-full h-full" onClick={togglePlay}>
-      {/* Fallback background */}
-      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
-        <span className="text-white text-[64px] font-bold">{fallbackInitial}</span>
-      </div>
-
-      {/* Video element */}
-      {hasValidUrl && !error && (
-        <video
-          ref={videoRef}
-          src={videoUrl}
-          loop={loop}
-          playsInline
-          preload="auto"
-          poster={poster}
-          className="absolute inset-0 w-full h-full object-contain bg-black"
-          webkit-playsinline="true"
-        />
-      )}
-
-      {/* Loading spinner - only show briefly, not forever */}
-      {isLoading && !error && hasValidUrl && !isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30">
-          <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+    <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={togglePlay}>
+      {/* Video container with proper aspect ratio */}
+      <div 
+        className="relative h-full max-h-full"
+        style={{ 
+          aspectRatio: aspectRatio,
+          maxWidth: '100%'
+        }}
+      >
+        {/* Fallback background */}
+        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] rounded-lg overflow-hidden">
+          <span className="text-white text-[64px] font-bold">{fallbackInitial}</span>
         </div>
-      )}
 
-      {/* Error state */}
-      {error && hasValidUrl && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-black/50">
-          <span className="text-white/80 text-[14px]">{error}</span>
-          <button
-            onClick={handleRetry}
-            className="flex items-center gap-2 px-6 py-3 bg-white/20 backdrop-blur-sm text-white text-[14px] font-semibold rounded-full hover:bg-white/30 transition"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Retry
-          </button>
-        </div>
-      )}
+        {/* Video element */}
+        {hasValidUrl && !error && (
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            loop={loop}
+            playsInline
+            preload="auto"
+            poster={poster}
+            className="absolute inset-0 w-full h-full object-contain"
+            webkit-playsinline="true"
+          />
+        )}
 
-      {/* Mute/unmute button */}
-      {isLoaded && !error && (
-        <button
-          onClick={toggleMute}
-          className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-20 hover:bg-black/70 transition"
-        >
-          {isMuted ? (
-            <VolumeX className="w-5 h-5 text-white" />
-          ) : (
-            <Volume2 className="w-5 h-5 text-white" />
-          )}
-        </button>
-      )}
-
-      {/* Play button overlay - show when paused or when video needs manual play */}
-      {((isLoaded && !isPlaying && !isLoading) || showPlayButton) && !error && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-20 h-20 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
-            <Play className="w-8 h-8 text-white fill-white ml-1" />
+        {/* Loading spinner */}
+        {isLoading && !error && hasValidUrl && !isLoaded && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30">
+            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Error state */}
+        {error && hasValidUrl && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-black/50">
+            <span className="text-white/80 text-[14px]">{error}</span>
+            <button
+              onClick={handleRetry}
+              className="flex items-center gap-2 px-6 py-3 bg-white/20 backdrop-blur-sm text-white text-[14px] font-semibold rounded-full hover:bg-white/30 transition"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Mute/unmute button */}
+        {isLoaded && !error && (
+          <button
+            onClick={toggleMute}
+            className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-20 hover:bg-black/70 transition"
+          >
+            {isMuted ? (
+              <VolumeX className="w-5 h-5 text-white" />
+            ) : (
+              <Volume2 className="w-5 h-5 text-white" />
+            )}
+          </button>
+        )}
+
+        {/* Play button overlay */}
+        {((isLoaded && !isPlaying && !isLoading) || showPlayButton) && !error && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-20 h-20 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
+              <Play className="w-8 h-8 text-white fill-white ml-1" />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
