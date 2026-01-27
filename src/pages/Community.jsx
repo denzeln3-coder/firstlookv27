@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, Users, MapPin, Calendar, Plus, MessageCircle, ChevronRight, Search, Video, Clock, X, Hash, Check, ExternalLink, Share2, Send } from 'lucide-react';
+import { ArrowLeft, Users, MapPin, Calendar, Plus, MessageCircle, ChevronRight, Search, Video, Clock, X, Hash, Check, ExternalLink, Share2, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CHANNEL_ICONS = ['💬', '🚀', '💡', '🎯', '🔥', '⚡', '🌟', '💎', '🎨', '🛠️', '📱', '🤖', '💰', '📈', '🎮', '🏥', '🌍', '📚'];
@@ -31,6 +31,7 @@ export default function Community() {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [selectedMeetup, setSelectedMeetup] = useState(null);
   const [collabFilter, setCollabFilter] = useState(null);
+  const [deletingChannel, setDeletingChannel] = useState(null);
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -169,6 +170,32 @@ export default function Community() {
     joinChannelMutation.mutate(channelId);
   };
 
+  const handleDeleteChannel = async (channelId) => {
+    try {
+      // Delete related data first
+      await supabase.from('channel_members').delete().eq('channel_id', channelId);
+      await supabase.from('discussion_replies').delete().in('discussion_id', 
+        supabase.from('discussions').select('id').eq('channel_id', channelId)
+      );
+      await supabase.from('discussion_upvotes').delete().in('discussion_id',
+        supabase.from('discussions').select('id').eq('channel_id', channelId)
+      );
+      await supabase.from('discussions').delete().eq('channel_id', channelId);
+      
+      // Delete the channel
+      const { error } = await supabase.from('channels').delete().eq('id', channelId);
+      
+      if (error) throw error;
+      
+      toast.success('Channel deleted');
+      setDeletingChannel(null);
+      queryClient.invalidateQueries({ queryKey: ['channels'] });
+    } catch (error) {
+      console.error('Error deleting channel:', error);
+      toast.error('Failed to delete channel');
+    }
+  };
+
   const handleRSVP = (meetupId, action) => {
     if (!user) { navigate('/Login'); return; }
     rsvpMutation.mutate({ meetupId, action });
@@ -228,6 +255,7 @@ export default function Community() {
               <div className="text-center py-12"><MessageCircle className="w-12 h-12 text-[#636366] mx-auto mb-3" /><p className="text-[#8E8E93]">No channels found</p></div>
             ) : filteredChannels.map(channel => {
               const isJoined = userChannels.includes(channel.id);
+              const isOwner = user?.id === channel.created_by;
               return (
                 <div 
                   key={channel.id} 
@@ -250,13 +278,23 @@ export default function Community() {
                         )}
                       </div>
                     </div>
-                    <button 
-                      onClick={(e) => handleJoinChannel(e, channel.id)} 
-                      disabled={joinChannelMutation.isPending} 
-                      className={`px-4 py-2 rounded-lg text-[13px] font-semibold transition ${isJoined ? 'bg-[rgba(255,255,255,0.06)] text-white' : 'bg-[#6366F1] text-white hover:brightness-110'}`}
-                    >
-                      {isJoined ? 'Joined' : 'Join'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {isOwner && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setDeletingChannel(channel); }}
+                          className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button 
+                        onClick={(e) => handleJoinChannel(e, channel.id)} 
+                        disabled={joinChannelMutation.isPending} 
+                        className={`px-4 py-2 rounded-lg text-[13px] font-semibold transition ${isJoined ? 'bg-[rgba(255,255,255,0.06)] text-white' : 'bg-[#6366F1] text-white hover:brightness-110'}`}
+                      >
+                        {isJoined ? 'Joined' : 'Join'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -392,6 +430,30 @@ export default function Community() {
           isPending={rsvpMutation.isPending}
         />
       )}
+
+      {/* Delete Channel Confirmation Modal */}
+      {deletingChannel && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDeletingChannel(null)}>
+          <div className="bg-[#1C1C1E] rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-bold text-lg mb-2">Delete Channel?</h3>
+            <p className="text-gray-400 text-sm mb-6">This will permanently delete "{deletingChannel.name}" and all its discussions.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingChannel(null)}
+                className="flex-1 py-2.5 bg-[#2C2C2E] text-white rounded-xl font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteChannel(deletingChannel.id)}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-medium"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -407,7 +469,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
   const [loadingComments, setLoadingComments] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
 
-  // Fetch comments when expanded
   useEffect(() => {
     if (showComments && meetup.id) {
       fetchComments();
@@ -424,11 +485,9 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
         .order('created_at', { ascending: true });
       
       if (error) {
-        // Table might not exist yet, that's ok
         console.log('Comments table may not exist:', error);
         setComments([]);
       } else if (data && data.length > 0) {
-        // Fetch user profiles for comments
         const userIds = [...new Set(data.map(c => c.user_id))];
         const { data: profiles } = await supabase
           .from('users')
@@ -505,7 +564,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
         <div className="p-6">
           <div className="w-12 h-1.5 bg-[#3F3F46] rounded-full mx-auto mb-4 sm:hidden" />
           
-          {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#6366F1]/30 to-[#8B5CF6]/30 flex flex-col items-center justify-center">
@@ -524,7 +582,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             </button>
           </div>
 
-          {/* Details */}
           <div className="space-y-4 mb-6">
             <div className="flex items-center gap-3 text-[#FAFAFA]">
               <Clock className="w-5 h-5 text-[#6366F1]" />
@@ -543,7 +600,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             </div>
           </div>
 
-          {/* Host */}
           <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl mb-6">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden">
               {meetup.host?.avatar_url ? (
@@ -558,7 +614,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             </div>
           </div>
 
-          {/* Description */}
           {meetup.description && (
             <div className="mb-6">
               <h3 className="text-white font-semibold mb-2">About</h3>
@@ -566,7 +621,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             </div>
           )}
 
-          {/* Meeting Link (if virtual and user is going) */}
           {meetup.is_virtual && meetup.meeting_link && isGoing && (
             <a 
               href={meetup.meeting_link}
@@ -579,7 +633,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             </a>
           )}
 
-          {/* Comments Section */}
           <div className="mb-6">
             <button
               onClick={() => setShowComments(!showComments)}
@@ -591,7 +644,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             
             {showComments && (
               <div className="bg-[#0A0A0A] border border-[#27272A] rounded-xl p-4">
-                {/* Add Comment Input */}
                 {user ? (
                   <div className="flex gap-3 mb-4">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -627,7 +679,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
                   </p>
                 )}
                 
-                {/* Comments List */}
                 {loadingComments ? (
                   <div className="text-center py-4">
                     <div className="w-5 h-5 border-2 border-[#6366F1]/20 border-t-[#6366F1] rounded-full animate-spin mx-auto" />
@@ -668,7 +719,6 @@ function MeetupDetailModal({ meetup, user, isGoing, onClose, onRSVP, isPending }
             )}
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3">
             <button 
               onClick={handleShare}
@@ -868,16 +918,14 @@ function CreateMeetupModal({ user, onClose, onSuccess }) {
     city: '', 
     event_date: '', 
     event_time: '', 
-    max_attendees: '', // Changed from 20 to empty string
+    max_attendees: '',
     is_virtual: false, 
     meeting_link: '' 
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Handle max attendees input properly
   const handleMaxAttendeesChange = (e) => {
     const value = e.target.value;
-    // Allow empty string or valid numbers
     if (value === '' || /^\d+$/.test(value)) {
       setFormData(prev => ({ ...prev, max_attendees: value }));
     }
@@ -890,7 +938,6 @@ function CreateMeetupModal({ user, onClose, onSuccess }) {
       return; 
     }
     
-    // Validate max attendees
     const maxAttendees = parseInt(formData.max_attendees) || 20;
     if (maxAttendees < 2) {
       toast.error('Max attendees must be at least 2');

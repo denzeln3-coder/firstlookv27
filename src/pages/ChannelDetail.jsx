@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { createPageUrl } from '../utils';
-import { ArrowLeft, Search, TrendingUp, Clock, Plus, ThumbsUp, MessageCircle, X, Image, Link2, Send, AtSign, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Search, TrendingUp, Clock, Plus, ThumbsUp, MessageCircle, X, Image, Link2, Send, AtSign, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const DISCUSSION_TYPES = [
@@ -27,6 +27,7 @@ export default function ChannelDetail() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [expandedDiscussion, setExpandedDiscussion] = useState(null);
   const [userUpvotes, setUserUpvotes] = useState([]);
+  const [deletingDiscussion, setDeletingDiscussion] = useState(null);
 
   // Fetch user
   useEffect(() => {
@@ -74,7 +75,6 @@ export default function ChannelDetail() {
         setDiscussions([]);
       } else {
         if (data && data.length > 0) {
-          // Get unique user IDs, filter out any null/undefined
           const userIds = [...new Set(data.map(d => d.user_id).filter(Boolean))];
           
           if (userIds.length > 0) {
@@ -87,7 +87,6 @@ export default function ChannelDetail() {
               console.error('Error fetching profiles:', profileError);
             }
             
-            // Attach profiles to discussions
             const discussionsWithProfiles = data.map(d => ({
               ...d,
               profiles: profiles?.find(p => p.id === d.user_id) || null
@@ -145,6 +144,26 @@ export default function ChannelDetail() {
     fetchDiscussions();
   };
 
+  const handleDeleteDiscussion = async (discussionId) => {
+    try {
+      // Delete related data first
+      await supabase.from('discussion_upvotes').delete().eq('discussion_id', discussionId);
+      await supabase.from('discussion_replies').delete().eq('discussion_id', discussionId);
+      
+      // Delete the discussion
+      const { error } = await supabase.from('discussions').delete().eq('id', discussionId);
+      
+      if (error) throw error;
+      
+      toast.success('Discussion deleted');
+      setDeletingDiscussion(null);
+      fetchDiscussions();
+    } catch (error) {
+      console.error('Error deleting discussion:', error);
+      toast.error('Failed to delete discussion');
+    }
+  };
+
   const handleStartDiscussion = () => {
     if (!user) {
       navigate('/Login');
@@ -173,7 +192,6 @@ export default function ChannelDetail() {
     return <div className="min-h-screen bg-black flex items-center justify-center text-white">Channel not found</div>;
   }
 
-  // Helper to get display name from discussion
   const getDisplayName = (discussion) => {
     if (discussion.profiles?.display_name) return discussion.profiles.display_name;
     if (discussion.profiles?.username) return discussion.profiles.username;
@@ -247,6 +265,7 @@ export default function ChannelDetail() {
           filteredDiscussions.map(discussion => {
             const typeConfig = DISCUSSION_TYPES.find(t => t.value === discussion.type) || DISCUSSION_TYPES[1];
             const hasUpvoted = userUpvotes.includes(discussion.id);
+            const isOwner = user?.id === discussion.user_id;
 
             return (
               <div key={discussion.id} className="bg-[#1C1C1E] rounded-2xl border border-white/5 hover:border-white/10 transition overflow-hidden">
@@ -261,10 +280,20 @@ export default function ChannelDetail() {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-white font-semibold text-sm">{getDisplayName(discussion)}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium text-white ${typeConfig.color}`}>{discussion.type}</span>
-                        <span className="text-gray-500 text-xs">{formatTimeAgo(discussion.created_at)}</span>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white font-semibold text-sm">{getDisplayName(discussion)}</span>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium text-white ${typeConfig.color}`}>{discussion.type}</span>
+                          <span className="text-gray-500 text-xs">{formatTimeAgo(discussion.created_at)}</span>
+                        </div>
+                        {isOwner && (
+                          <button
+                            onClick={() => setDeletingDiscussion(discussion)}
+                            className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
 
                       <h3 className="text-white font-semibold mb-1">{discussion.title}</h3>
@@ -340,6 +369,30 @@ export default function ChannelDetail() {
           }} 
         />
       )}
+
+      {/* Delete Discussion Confirmation Modal */}
+      {deletingDiscussion && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDeletingDiscussion(null)}>
+          <div className="bg-[#1C1C1E] rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-bold text-lg mb-2">Delete Discussion?</h3>
+            <p className="text-gray-400 text-sm mb-6">This will permanently delete this discussion and all its replies.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingDiscussion(null)}
+                className="flex-1 py-2.5 bg-[#2C2C2E] text-white rounded-xl font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteDiscussion(deletingDiscussion.id)}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-medium"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -351,7 +404,6 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
   const [replyingTo, setReplyingTo] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Helper to get display name from reply
   const getDisplayName = (reply) => {
     if (reply.profiles?.display_name) return reply.profiles.display_name;
     if (reply.profiles?.username) return reply.profiles.username;
@@ -422,7 +474,6 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
     });
     
     if (!error) {
-      // Update reply count
       const { data: disc } = await supabase.from('discussions').select('reply_count').eq('id', discussionId).single();
       await supabase.from('discussions').update({ reply_count: (disc?.reply_count || 0) + 1 }).eq('id', discussionId);
       
@@ -435,6 +486,24 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
       toast.error('Failed to post reply');
     }
     setSubmitting(false);
+  };
+
+  const handleDeleteReply = async (replyId) => {
+    try {
+      const { error } = await supabase.from('discussion_replies').delete().eq('id', replyId);
+      if (error) throw error;
+      
+      // Update reply count
+      const { data: disc } = await supabase.from('discussions').select('reply_count').eq('id', discussionId).single();
+      await supabase.from('discussions').update({ reply_count: Math.max(0, (disc?.reply_count || 1) - 1) }).eq('id', discussionId);
+      
+      toast.success('Reply deleted');
+      fetchReplies();
+      onReplyAdded();
+    } catch (error) {
+      console.error('Error deleting reply:', error);
+      toast.error('Failed to delete reply');
+    }
   };
 
   const formatTimeAgo = (date) => {
@@ -457,30 +526,43 @@ function RepliesSection({ discussionId, user, navigate, onReplyAdded }) {
           <div className="p-4 text-center text-gray-500 text-sm">No replies yet. Be the first!</div>
         ) : (
           <div className="p-4 space-y-4">
-            {replies.map(reply => (
-              <div key={reply.id} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {reply.profiles?.avatar_url ? (
-                    <img src={reply.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-white text-xs font-bold">{getAvatarLetter(reply)}</span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-white font-medium text-sm">{getDisplayName(reply)}</span>
-                    <span className="text-gray-500 text-xs">{formatTimeAgo(reply.created_at)}</span>
+            {replies.map(reply => {
+              const isOwner = user?.id === reply.user_id;
+              return (
+                <div key={reply.id} className="flex gap-3 group">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {reply.profiles?.avatar_url ? (
+                      <img src={reply.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white text-xs font-bold">{getAvatarLetter(reply)}</span>
+                    )}
                   </div>
-                  <p className="text-gray-300 text-sm whitespace-pre-wrap">{reply.content}</p>
-                  <button
-                    onClick={() => setReplyingTo(reply.profiles)}
-                    className="text-gray-500 text-xs mt-1 hover:text-[#6366F1] flex items-center gap-1"
-                  >
-                    <AtSign className="w-3 h-3" /> Reply
-                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium text-sm">{getDisplayName(reply)}</span>
+                        <span className="text-gray-500 text-xs">{formatTimeAgo(reply.created_at)}</span>
+                      </div>
+                      {isOwner && (
+                        <button
+                          onClick={() => handleDeleteReply(reply.id)}
+                          className="p-1 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-gray-300 text-sm whitespace-pre-wrap">{reply.content}</p>
+                    <button
+                      onClick={() => setReplyingTo(reply.profiles)}
+                      className="text-gray-500 text-xs mt-1 hover:text-[#6366F1] flex items-center gap-1"
+                    >
+                      <AtSign className="w-3 h-3" /> Reply
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
