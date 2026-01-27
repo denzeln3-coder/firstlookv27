@@ -49,7 +49,6 @@ export default function Community() {
     queryFn: async () => {
       const { data } = await supabase.from('channels').select('*, creator:users(id, display_name, avatar_url)').order('member_count', { ascending: false });
       return data || [];
-      console.log("Channels data:", data);
     }
   });
 
