@@ -4,8 +4,33 @@ import { Toaster } from 'sonner';
 import { useAuth } from '@/lib/AuthContext';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
 import UserTypeSelectionModal from './components/UserTypeSelectionModal';
+import BottomNav from './components/BottomNav';
 
-export default function Layout({ children }) {
+// Pages that should show the bottom nav
+const PAGES_WITH_BOTTOM_NAV = [
+  'Explore',
+  'Community',
+  'Messages',
+  'Profile',
+  'Saved',
+  'ChannelDetail',
+  'FollowersList',
+  'Leaderboard',
+  'ForumHome',
+  'Discover',
+  ''  // Home route
+];
+
+// Pages that should NOT have bottom padding (they handle it themselves or don't need it)
+const PAGES_WITHOUT_PADDING = [
+  'RecordPitch',
+  'VideoEditor',
+  'Login',
+  'PitchCardCreator',
+  'ThumbnailSelector'
+];
+
+export default function Layout({ children, currentPageName }) {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
   const [showUserTypeSelection, setShowUserTypeSelection] = React.useState(false);
   const [hasCheckedUserType, setHasCheckedUserType] = React.useState(false);
@@ -14,6 +39,15 @@ export default function Layout({ children }) {
 
   // Use AuthContext instead of separate query - single source of truth
   const { user, isLoadingAuth } = useAuth();
+
+  // Determine current page from URL
+  const currentPage = currentPageName || location.pathname.replace('/', '') || 'Explore';
+  
+  // Should show bottom nav?
+  const showBottomNav = PAGES_WITH_BOTTOM_NAV.includes(currentPage);
+  
+  // Should add bottom padding?
+  const addBottomPadding = showBottomNav && !PAGES_WITHOUT_PADDING.includes(currentPage);
 
   // Only show user type selection once per session, and only if user exists but has no type
   React.useEffect(() => {
@@ -82,6 +116,72 @@ export default function Layout({ children }) {
           color: #FAFAFA;
         }
 
+        /* Page transitions */
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .page-content {
+          animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        @keyframes slideInRight {
+          from {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        .slide-in-right {
+          animation: slideInRight 0.25s ease-out forwards;
+        }
+
+        @keyframes slideInLeft {
+          from {
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        .slide-in-left {
+          animation: slideInLeft 0.25s ease-out forwards;
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .slide-up {
+          animation: slideUp 0.3s ease-out forwards;
+        }
+
+        /* Safe area for bottom nav */
+        .pb-safe {
+          padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
         .brand-title {
           font-weight: 700;
           letter-spacing: -0.03em;
@@ -123,18 +223,15 @@ export default function Layout({ children }) {
         }
 
         button {
-          transition: opacity 200ms ease;
+          transition: all 200ms ease;
         }
 
         button:active {
-          opacity: 0.8;
+          transform: scale(0.97);
+          opacity: 0.9;
         }
 
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
+        /* Skeleton loading animation */
         @keyframes shimmer {
           0% { background-position: -1000px 0; }
           100% { background-position: 1000px 0; }
@@ -144,20 +241,22 @@ export default function Layout({ children }) {
           background: linear-gradient(
             90deg,
             rgba(255,255,255,0.03) 0%,
-            rgba(255,255,255,0.06) 50%,
+            rgba(255,255,255,0.08) 50%,
             rgba(255,255,255,0.03) 100%
           );
           background-size: 1000px 100%;
-          animation: shimmer 2s infinite;
+          animation: shimmer 1.5s infinite;
         }
 
+        /* Custom scrollbar */
         * {
           scrollbar-width: thin;
           scrollbar-color: rgba(255,255,255,0.1) transparent;
         }
 
         *::-webkit-scrollbar {
-          width: 8px;
+          width: 6px;
+          height: 6px;
         }
 
         *::-webkit-scrollbar-track {
@@ -166,14 +265,67 @@ export default function Layout({ children }) {
 
         *::-webkit-scrollbar-thumb {
           background: rgba(255,255,255,0.1);
-          border-radius: 4px;
+          border-radius: 3px;
         }
 
         *::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,255,255,0.15);
+          background: rgba(255,255,255,0.2);
+        }
+
+        /* Hide scrollbar but keep functionality */
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+
+        /* Smooth transitions for all interactive elements */
+        a, button {
+          transition: all 0.2s ease;
+        }
+
+        /* Modal backdrop */
+        .modal-backdrop {
+          animation: fadeIn 0.15s ease-out forwards;
+        }
+
+        /* Card hover effects */
+        .card-hover {
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card-hover:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Input focus styles */
+        input:focus, textarea:focus {
+          outline: none;
+          border-color: #6366F1 !important;
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        /* Tap highlight removal on mobile */
+        * {
+          -webkit-tap-highlight-color: transparent;
         }
       `}</style>
-      {children}
+      
+      {/* Main content with page transition */}
+      <div 
+        key={location.pathname}
+        className={`page-content ${addBottomPadding ? 'pb-20' : ''}`}
+      >
+        {children}
+      </div>
+      
+      {/* Bottom Navigation */}
+      {showBottomNav && <BottomNav />}
+      
       <Toaster 
         position="top-center" 
         toastOptions={{

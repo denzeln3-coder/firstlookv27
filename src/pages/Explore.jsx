@@ -4,11 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Play,
   Search,
-  Home,
-  Compass,
   Video,
-  Bookmark,
-  User,
   LogIn,
   X,
   TrendingUp,
@@ -266,7 +262,7 @@ export default function Explore() {
     refetchInterval: false
   });
 
-  // FIXED: Query direct_messages table with correct column names
+  // Unread messages count for header icon
   const { data: unreadMessagesCount = 0 } = useQuery({
     queryKey: ['unreadMessages', user?.id],
     queryFn: async () => {
@@ -377,28 +373,8 @@ export default function Explore() {
     }
   };
 
-  // Navigate to appropriate page based on user type for center button
-  const handleCenterButtonClick = () => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-    
-    if (isFounder) {
-      navigate(createPageUrl('RecordPitch'));
-    } else if (isInvestor) {
-      navigate(createPageUrl('InvestorDashboard'));
-    } else if (isHunter) {
-      // Hunters go to HunterDashboard
-      navigate(createPageUrl('HunterDashboard'));
-    } else {
-      // Fallback for users without a type set
-      navigate(createPageUrl('Settings'));
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-[#000000] w-full pb-20">
+    <div className="min-h-screen bg-[#000000] w-full">
       {/* Header */}
       <div className="fixed top-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg z-20 border-b border-[rgba(255,255,255,0.06)]">
         <div className="px-4 py-3 flex items-center justify-between">
@@ -478,7 +454,7 @@ export default function Explore() {
 
         {/* Search */}
         {showSearch && (
-          <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)]">
+          <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)] slide-up">
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#636366]" />
               <input
@@ -511,7 +487,7 @@ export default function Explore() {
         )}
 
         {/* Filter tabs */}
-        <div className="px-4 py-2 overflow-x-auto">
+        <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 min-w-max">
             {[
               { id: 'trending', label: 'Trending', icon: TrendingUp },
@@ -540,7 +516,7 @@ export default function Explore() {
 
         {/* Category/Stage filters */}
         {showFilters && (
-          <div className="px-4 py-4 border-t border-[rgba(255,255,255,0.06)]">
+          <div className="px-4 py-4 border-t border-[rgba(255,255,255,0.06)] slide-up">
             <div className="space-y-4">
               <div>
                 <label className="block text-[#8E8E93] text-[11px] font-semibold tracking-wide uppercase mb-2">Category</label>
@@ -601,7 +577,7 @@ export default function Explore() {
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
             {[...Array(12)].map((_, i) => (
-              <div key={i} className="relative w-full bg-[#18181B] rounded-sm animate-pulse" style={{ paddingBottom: '125%' }} />
+              <div key={i} className="relative w-full bg-[#18181B] rounded-sm skeleton" style={{ paddingBottom: '125%' }} />
             ))}
           </div>
         ) : filteredPitches.length === 0 ? (
@@ -629,67 +605,7 @@ export default function Explore() {
         )}
       </div>
 
-      {/* Bottom Nav - Role-aware */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg border-t border-[rgba(255,255,255,0.06)] z-50">
-        <div className="flex items-center justify-around py-2 px-4 pb-safe">
-          <button onClick={() => navigate(createPageUrl('Explore'))} className="flex flex-col items-center gap-1 min-h-[44px] justify-center">
-            <div className="w-8 h-8 rounded-full bg-[rgba(139,92,246,0.15)] flex items-center justify-center">
-              <Home className="w-5 h-5 text-[#8B5CF6]" />
-            </div>
-            <span className="text-[10px] font-semibold text-[#8B5CF6]">Home</span>
-          </button>
-
-          <button onClick={() => navigate(createPageUrl('Community'))} className="flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
-            <Users className="w-6 h-6" />
-            <span className="text-[10px] font-semibold">Community</span>
-          </button>
-
-          {/* Center button - changes based on user type */}
-          <button onClick={handleCenterButtonClick} className="flex flex-col items-center gap-1 -mt-4 min-h-[44px] justify-center">
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:brightness-110 transition-colors ${
-              isFounder 
-                ? 'bg-[#8B5CF6] shadow-[0_4px_20px_rgba(139,92,246,0.5)]' 
-                : isInvestor 
-                  ? 'bg-[#10B981] shadow-[0_4px_20px_rgba(16,185,129,0.5)]'
-                  : isHunter
-                    ? 'bg-[#F59E0B] shadow-[0_4px_20px_rgba(245,158,11,0.5)]'
-                    : 'bg-[#6366F1] shadow-[0_4px_20px_rgba(99,102,241,0.5)]'
-            }`}>
-              {isFounder ? (
-                <Video className="w-6 h-6 text-white" />
-              ) : isInvestor ? (
-                <TrendingUp className="w-6 h-6 text-white" />
-              ) : isHunter ? (
-                <Target className="w-6 h-6 text-white" />
-              ) : (
-                <Compass className="w-6 h-6 text-white" />
-              )}
-            </div>
-          </button>
-
-          {user ? (
-            <button onClick={() => navigate(createPageUrl('Messages'))} className="relative flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
-              <MessageCircle className="w-6 h-6" />
-              {unreadMessagesCount > 0 && (
-                <div className="absolute top-0 right-2 w-4 h-4 bg-[#EF4444] rounded-full flex items-center justify-center">
-                  <span className="text-white text-[9px] font-bold">{unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}</span>
-                </div>
-              )}
-              <span className="text-[10px] font-semibold">Messages</span>
-            </button>
-          ) : (
-            <button onClick={() => navigate(createPageUrl('Saved'))} className="flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
-              <Bookmark className="w-6 h-6" />
-              <span className="text-[10px] font-semibold">Saved</span>
-            </button>
-          )}
-
-          <button onClick={() => { if (user) navigate(createPageUrl('Profile')); else navigate('/login'); }} className="flex flex-col items-center gap-1 text-[#52525B] hover:text-white transition-colors min-h-[44px] justify-center">
-            <User className="w-6 h-6" />
-            <span className="text-[10px] font-semibold">Profile</span>
-          </button>
-        </div>
-      </div>
+      {/* Bottom Nav is now handled by Layout.jsx */}
 
       {selectedPitch && <PitchModal pitch={selectedPitch} onClose={() => setSelectedPitch(null)} />}
       {InstallPrompt && <InstallPrompt />}
