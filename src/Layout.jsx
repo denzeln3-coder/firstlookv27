@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/AuthContext';
 import PrivacyPolicyModal from '@/components/PrivacyPolicyModal';
 import UserTypeSelectionModal from '@/components/UserTypeSelectionModal';
 import BottomNav from '@/components/BottomNav';
-import { OfflineProvider } from '@/components/OfflineSupport';
 
 // Pages that should show the bottom nav
 const PAGES_WITH_BOTTOM_NAV = [
@@ -78,7 +77,7 @@ export default function Layout({ children, currentPageName }) {
   };
 
   return (
-    <OfflineProvider>
+    <>
       {showUserTypeSelection && (
         <UserTypeSelectionModal onComplete={handleUserTypeComplete} />
       )}
@@ -133,36 +132,6 @@ export default function Layout({ children, currentPageName }) {
           animation: fadeIn 0.2s ease-out forwards;
         }
 
-        @keyframes slideInRight {
-          from {
-            opacity: 0;
-            transform: translateX(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-
-        .slide-in-right {
-          animation: slideInRight 0.25s ease-out forwards;
-        }
-
-        @keyframes slideInLeft {
-          from {
-            opacity: 0;
-            transform: translateX(-20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-
-        .slide-in-left {
-          animation: slideInLeft 0.25s ease-out forwards;
-        }
-
         @keyframes slideUp {
           from {
             opacity: 0;
@@ -183,44 +152,11 @@ export default function Layout({ children, currentPageName }) {
           padding-bottom: env(safe-area-inset-bottom, 0px);
         }
 
-        .brand-title {
-          font-weight: 700;
-          letter-spacing: -0.03em;
-        }
-
-        .brand-title .highlight {
-          background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #A855F7 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
-        .filter-pill {
-          transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
-          border: 1px solid transparent;
-        }
-
-        .filter-pill:not(.active):hover {
-          border-color: rgba(99, 102, 241, 0.3);
-          background: rgba(99, 102, 241, 0.1);
-        }
-
-        .filter-pill.active {
-          background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
-          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-        }
-
         .gradient-text {
           background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #A855F7 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
-        }
-
-        .glass-card {
-          background: rgba(24, 24, 27, 0.8);
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         button {
@@ -249,30 +185,6 @@ export default function Layout({ children, currentPageName }) {
           animation: shimmer 1.5s infinite;
         }
 
-        /* Custom scrollbar */
-        * {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(255,255,255,0.1) transparent;
-        }
-
-        *::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-
-        *::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        *::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.1);
-          border-radius: 3px;
-        }
-
-        *::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,255,255,0.2);
-        }
-
         /* Hide scrollbar but keep functionality */
         .scrollbar-hide {
           -ms-overflow-style: none;
@@ -281,33 +193,6 @@ export default function Layout({ children, currentPageName }) {
         
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
-        }
-
-        /* Smooth transitions for all interactive elements */
-        a, button {
-          transition: all 0.2s ease;
-        }
-
-        /* Modal backdrop */
-        .modal-backdrop {
-          animation: fadeIn 0.15s ease-out forwards;
-        }
-
-        /* Card hover effects */
-        .card-hover {
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .card-hover:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-        }
-
-        /* Input focus styles */
-        input:focus, textarea:focus {
-          outline: none;
-          border-color: #6366F1 !important;
-          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
 
         /* Tap highlight removal on mobile */
@@ -339,6 +224,6 @@ export default function Layout({ children, currentPageName }) {
           }
         }}
       />
-    </OfflineProvider>
+    </>
   );
 }
