@@ -432,8 +432,8 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
 
   return (
     <div className="fixed inset-0 bg-[#000000] z-50 flex flex-col">
-      {/* Progress Bar */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-[#18181B] z-20">
+      {/* Progress Bar - Always visible */}
+      <div className="absolute top-0 left-0 right-0 h-1 bg-[#27272A] z-20">
         <div 
           className="h-full bg-[#6366F1] transition-all duration-300" 
           style={{ width: `${(elapsedTime / MAX_TIME) * 100}%` }} 
@@ -448,8 +448,52 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
         <div className="absolute inset-0 border-4 border-[#FBBF24] z-10 pointer-events-none" />
       )}
 
+      {/* Timer - Always visible at top */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
+        <div className="px-6 py-3 bg-black/80 backdrop-blur-md rounded-2xl border border-white/10">
+          <div className="flex items-center gap-4">
+            {/* Recording indicator */}
+            <div className="flex items-center gap-2">
+              {recordingState === 'ready' ? (
+                <div className="w-3 h-3 rounded-full bg-[#71717A]" />
+              ) : recordingState === 'recording' ? (
+                <div className="w-3 h-3 rounded-full bg-[#EF4444] animate-pulse" />
+              ) : recordingState === 'paused' ? (
+                <div className="w-3 h-3 rounded-full bg-[#FBBF24]" />
+              ) : (
+                <div className="w-3 h-3 rounded-full bg-[#6366F1] animate-spin" />
+              )}
+              <span className="text-white text-sm font-medium">
+                {recordingState === 'ready' ? 'READY' : 
+                 recordingState === 'recording' ? 'REC' : 
+                 recordingState === 'paused' ? 'PAUSED' : 'PROCESSING'}
+              </span>
+            </div>
+            
+            {/* Time display */}
+            <div className="text-white text-3xl font-bold font-mono">
+              {formatTime(elapsedTime)}
+            </div>
+            
+            {/* Max time */}
+            <div className="text-[#71717A] text-sm">
+              / {formatTime(MAX_TIME)}
+            </div>
+          </div>
+        </div>
+
+        {/* Time remaining warning */}
+        {recordingState !== 'ready' && getTimeRemaining() <= 30 && getTimeRemaining() > 0 && (
+          <div className="mt-2 px-3 py-1 bg-[#EF4444]/20 border border-[#EF4444]/40 rounded-full text-center">
+            <span className="text-[#EF4444] text-xs font-medium">
+              {getTimeRemaining()}s remaining
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Main Content Area */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative pt-24">
         {recordingType === 'video' ? (
           // Camera recording - full screen preview
           <video
@@ -464,29 +508,28 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#18181B] to-[#09090B]">
             {recordingState === 'ready' ? (
               // Ready state - prompt to start
-              <div className="text-center px-6">
-                <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-[#6366F1]/20 flex items-center justify-center">
-                  <Monitor className="w-12 h-12 text-[#6366F1]" />
+              <div className="text-center px-6 max-w-md">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-[#6366F1]/20 flex items-center justify-center">
+                  <Monitor className="w-10 h-10 text-[#6366F1]" />
                 </div>
                 <h2 className="text-white text-2xl font-bold mb-3">Record Your Screen</h2>
-                <p className="text-[#A1A1AA] text-base mb-2">
-                  Show your product in action
+                <p className="text-[#A1A1AA] text-base mb-6">
+                  Show your product in action. A browser popup will appear to select which screen or window to share.
                 </p>
-                <p className="text-[#71717A] text-sm mb-8">
-                  You'll be asked to select which screen or window to share
-                </p>
-                <div className="flex flex-col gap-3 max-w-xs mx-auto">
-                  <div className="flex items-center gap-3 text-left p-3 bg-[#27272A] rounded-xl">
+                
+                {/* Info cards - stacked vertically with proper spacing */}
+                <div className="space-y-3 mb-8">
+                  <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
                     <div className="w-8 h-8 rounded-full bg-[#22C55E]/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[#22C55E] text-sm">✓</span>
+                      <Mic className="w-4 h-4 text-[#22C55E]" />
                     </div>
-                    <span className="text-[#D4D4D8] text-sm">Audio will be captured from your mic</span>
+                    <span className="text-[#D4D4D8] text-sm text-left">Audio will be captured from your mic</span>
                   </div>
-                  <div className="flex items-center gap-3 text-left p-3 bg-[#27272A] rounded-xl">
+                  <div className="flex items-center gap-3 p-3 bg-[#27272A] rounded-xl">
                     <div className="w-8 h-8 rounded-full bg-[#22C55E]/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[#22C55E] text-sm">✓</span>
+                      <span className="text-[#22C55E] text-sm font-bold">2m</span>
                     </div>
-                    <span className="text-[#D4D4D8] text-sm">Maximum 2 minutes recording time</span>
+                    <span className="text-[#D4D4D8] text-sm text-left">Maximum 2 minutes recording time</span>
                   </div>
                 </div>
               </div>
@@ -505,49 +548,6 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
           </div>
         )}
 
-        {/* Timer Overlay - Top Center */}
-        {recordingState !== 'ready' && recordingState !== 'processing' && (
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
-            <div className="flex flex-col items-center gap-2">
-              {/* Large Timer */}
-              <div className="px-6 py-3 bg-black/80 backdrop-blur-md rounded-2xl border border-white/10">
-                <div className="flex items-center gap-4">
-                  {/* Recording indicator */}
-                  <div className="flex items-center gap-2">
-                    {recordingState === 'recording' ? (
-                      <div className="w-3 h-3 rounded-full bg-[#EF4444] animate-pulse" />
-                    ) : (
-                      <div className="w-3 h-3 rounded-full bg-[#FBBF24]" />
-                    )}
-                    <span className="text-white text-sm font-medium">
-                      {recordingState === 'recording' ? 'REC' : 'PAUSED'}
-                    </span>
-                  </div>
-                  
-                  {/* Time display */}
-                  <div className="text-white text-3xl font-bold font-mono">
-                    {formatTime(elapsedTime)}
-                  </div>
-                  
-                  {/* Time remaining */}
-                  <div className="text-[#71717A] text-sm">
-                    / {formatTime(MAX_TIME)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Time remaining warning */}
-              {getTimeRemaining() <= 30 && getTimeRemaining() > 0 && (
-                <div className="px-3 py-1 bg-[#EF4444]/20 border border-[#EF4444]/40 rounded-full">
-                  <span className="text-[#EF4444] text-xs font-medium">
-                    {getTimeRemaining()}s remaining
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Processing Overlay */}
         {recordingState === 'processing' && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-30">
@@ -561,7 +561,7 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
       </div>
 
       {/* Bottom Controls */}
-      <div className="flex-shrink-0 pb-8 pt-4 px-6 bg-gradient-to-t from-black/80 to-transparent">
+      <div className="flex-shrink-0 pb-8 pt-4 px-6 bg-gradient-to-t from-black via-black/80 to-transparent">
         <div className="flex items-center justify-center gap-6">
           {/* Mute Button - Only show when recording */}
           {(recordingState === 'recording' || recordingState === 'paused') && hasAudio && (
@@ -601,8 +601,8 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
             disabled={recordingState === 'processing'}
             className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all disabled:opacity-50 ${
               recordingState === 'ready'
-                ? 'bg-[#EF4444] shadow-[#EF4444]/30'
-                : 'bg-[#EF4444] shadow-[#EF4444]/30'
+                ? 'bg-[#EF4444] shadow-[0_0_30px_rgba(239,68,68,0.4)]'
+                : 'bg-[#EF4444] shadow-[0_0_30px_rgba(239,68,68,0.4)]'
             }`}
           >
             {recordingState === 'ready' ? (
@@ -622,17 +622,13 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
           </button>
         </div>
 
-        {/* Recording Tips */}
-        {recordingState === 'ready' && (
-          <p className="text-center text-[#71717A] text-sm mt-4">
-            Tap the red button to start recording
-          </p>
-        )}
-        {(recordingState === 'recording' || recordingState === 'paused') && (
-          <p className="text-center text-[#71717A] text-sm mt-4">
-            Tap the square to finish recording
-          </p>
-        )}
+        {/* Recording Tips - Clear and separate */}
+        <p className="text-center text-[#A1A1AA] text-sm mt-6">
+          {recordingState === 'ready' && 'Tap the red button to start recording'}
+          {recordingState === 'recording' && 'Recording... Tap the square to finish'}
+          {recordingState === 'paused' && 'Paused. Tap play to resume or square to finish'}
+          {recordingState === 'processing' && 'Processing your video...'}
+        </p>
       </div>
 
       {/* Error Modal */}
