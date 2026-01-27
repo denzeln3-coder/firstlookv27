@@ -247,7 +247,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       {/* Main container - centers video */}
       <div className="relative w-full h-full flex items-center justify-center" onClick={handleDoubleTap}>
         {/* Video container - 9:16 aspect ratio */}
-        <div className="relative h-full" style={{ aspectRatio: '9/16', maxWidth: '100%' }}>
+        <div className="absolute inset-0"
           <VideoPlayer videoUrl={pitch.video_url} poster={pitch.thumbnail_url} autoPlay={true} loop={true} startMuted={false} fallbackInitial={pitch.startup_name?.[0]?.toUpperCase() || '?'} />
 
           {/* Gradient overlay */}

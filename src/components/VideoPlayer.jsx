@@ -19,7 +19,6 @@ export default function VideoPlayer({
 
   const hasValidUrl = videoUrl && videoUrl.trim() !== '';
 
-  // Reset state when URL changes
   useEffect(() => {
     setIsLoaded(false);
     setError(null);
@@ -58,113 +57,40 @@ export default function VideoPlayer({
             video.muted = true;
             if (mounted) setIsMuted(true);
             video.play()
-              .then(() => {
-                if (mounted) {
-                  setIsPlaying(true);
-                  setShowPlayButton(false);
-                }
-              })
-              .catch((err) => {
-                console.error('Autoplay failed:', err);
-                if (mounted) {
-                  setIsPlaying(false);
-                  setShowPlayButton(true);
-                }
-              });
+              .then(() => { if (mounted) { setIsPlaying(true); setShowPlayButton(false); } })
+              .catch(() => { if (mounted) { setIsPlaying(false); setShowPlayButton(true); } });
           });
       }
     };
 
-    const handleCanPlayThrough = () => {
-      if (!mounted) return;
-      clearTimeout(loadTimeout);
-      setIsLoading(false);
-      setIsLoaded(true);
-    };
-
-    const handlePlay = () => {
-      if (mounted) {
-        setIsPlaying(true);
-        setShowPlayButton(false);
-        setIsLoading(false);
-      }
-    };
-    
-    const handlePause = () => {
-      if (mounted) {
-        setIsPlaying(false);
-        setShowPlayButton(true);
-      }
-    };
-    
-    const handleWaiting = () => {
-      if (mounted && isPlaying) {
-        setIsLoading(true);
-      }
-    };
-    
-    const handlePlaying = () => {
-      if (mounted) {
-        setIsLoading(false);
-        setIsPlaying(true);
-        setShowPlayButton(false);
-      }
-    };
-
-    const handleCanPlay = () => {
-      if (mounted) {
-        setIsLoading(false);
-        setIsLoaded(true);
-      }
-    };
-
-    const handleEnded = () => {
-      if (mounted && !loop) {
-        setIsPlaying(false);
-        setShowPlayButton(true);
-      }
-    };
-
-    const handleError = (e) => {
-      console.error('Video error:', e);
-      if (mounted) {
-        setError('Failed to load video');
-        setIsLoading(false);
-        setIsLoaded(false);
-      }
-    };
+    const handlePlay = () => { if (mounted) { setIsPlaying(true); setShowPlayButton(false); setIsLoading(false); } };
+    const handlePause = () => { if (mounted) { setIsPlaying(false); setShowPlayButton(true); } };
+    const handleCanPlay = () => { if (mounted) { setIsLoading(false); setIsLoaded(true); } };
+    const handleEnded = () => { if (mounted && !loop) { setIsPlaying(false); setShowPlayButton(true); } };
+    const handleError = () => { if (mounted) { setError('Failed to load video'); setIsLoading(false); setIsLoaded(false); } };
 
     video.addEventListener('loadeddata', handleLoadedData);
-    video.addEventListener('canplaythrough', handleCanPlayThrough);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
-    video.addEventListener('waiting', handleWaiting);
-    video.addEventListener('playing', handlePlaying);
     video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleError);
 
     loadTimeout = setTimeout(() => {
-      if (mounted && isLoading && !isLoaded) {
-        setIsLoading(false);
-        setShowPlayButton(true);
-      }
+      if (mounted && isLoading && !isLoaded) { setIsLoading(false); setShowPlayButton(true); }
     }, 8000);
 
     return () => {
       mounted = false;
       clearTimeout(loadTimeout);
       video.removeEventListener('loadeddata', handleLoadedData);
-      video.removeEventListener('canplaythrough', handleCanPlayThrough);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
-      video.removeEventListener('waiting', handleWaiting);
-      video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('error', handleError);
     };
-  }, [videoUrl, autoPlay, startMuted, hasValidUrl, loop, isPlaying]);
+  }, [videoUrl, autoPlay, startMuted, hasValidUrl, loop, isLoading, isLoaded]);
 
   const togglePlay = useCallback((e) => {
     e.stopPropagation();
@@ -174,16 +100,8 @@ export default function VideoPlayer({
     if (video.paused) {
       setIsLoading(true);
       video.play()
-        .then(() => {
-          setIsPlaying(true);
-          setShowPlayButton(false);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error('Play failed:', err);
-          setIsLoading(false);
-          setShowPlayButton(true);
-        });
+        .then(() => { setIsPlaying(true); setShowPlayButton(false); setIsLoading(false); })
+        .catch(() => { setIsLoading(false); setShowPlayButton(true); });
     } else {
       video.pause();
       setIsPlaying(false);
@@ -195,7 +113,6 @@ export default function VideoPlayer({
     e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
-
     video.muted = !video.muted;
     setIsMuted(video.muted);
   }, []);
@@ -205,12 +122,9 @@ export default function VideoPlayer({
     setError(null);
     setIsLoading(true);
     setIsLoaded(false);
-    if (videoRef.current) {
-      videoRef.current.load();
-    }
+    if (videoRef.current) videoRef.current.load();
   }, []);
 
-  // Show fallback only if no valid URL or error
   if (!hasValidUrl || error) {
     return (
       <div className="relative w-full h-full bg-black flex items-center justify-center" onClick={error ? handleRetry : undefined}>
@@ -220,9 +134,8 @@ export default function VideoPlayer({
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/50">
             <span className="text-white/80 text-sm">{error}</span>
-            <button className="flex items-center gap-2 px-4 py-2 bg-white/20 text-white text-sm rounded-full hover:bg-white/30 transition">
-              <RefreshCw className="w-4 h-4" />
-              Retry
+            <button className="flex items-center gap-2 px-4 py-2 bg-white/20 text-white text-sm rounded-full">
+              <RefreshCw className="w-4 h-4" />Retry
             </button>
           </div>
         )}
@@ -231,8 +144,7 @@ export default function VideoPlayer({
   }
 
   return (
-    <div className="relative w-full h-full bg-black" onClick={togglePlay}>
-      {/* Video element - centered with object-contain */}
+    <div className="relative w-full h-full bg-black flex items-center justify-center" onClick={togglePlay}>
       <video
         ref={videoRef}
         src={videoUrl}
@@ -240,32 +152,23 @@ export default function VideoPlayer({
         playsInline
         preload="auto"
         poster={poster}
-        className="absolute inset-0 w-full h-full object-contain"
+        className="max-w-full max-h-full w-auto h-auto"
+        style={{ objectFit: 'contain' }}
         webkit-playsinline="true"
       />
 
-      {/* Loading spinner */}
       {isLoading && !isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30">
           <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
         </div>
       )}
 
-      {/* Mute/unmute button */}
       {isLoaded && (
-        <button
-          onClick={toggleMute}
-          className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-20 hover:bg-black/70 transition"
-        >
-          {isMuted ? (
-            <VolumeX className="w-5 h-5 text-white" />
-          ) : (
-            <Volume2 className="w-5 h-5 text-white" />
-          )}
+        <button onClick={toggleMute} className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-20">
+          {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
         </button>
       )}
 
-      {/* Play button overlay */}
       {((isLoaded && !isPlaying && !isLoading) || showPlayButton) && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-20 h-20 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
