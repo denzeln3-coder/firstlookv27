@@ -2,10 +2,10 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '@/lib/AuthContext';
-import PrivacyPolicyModal from './components/PrivacyPolicyModal';
-import UserTypeSelectionModal from './components/UserTypeSelectionModal';
-import BottomNav from './components/BottomNav';
-import { OfflineProvider } from './components/OfflineSupport';
+import PrivacyPolicyModal from '@/components/PrivacyPolicyModal';
+import UserTypeSelectionModal from '@/components/UserTypeSelectionModal';
+import BottomNav from '@/components/BottomNav';
+import { OfflineProvider } from '@/components/OfflineSupport';
 
 // Pages that should show the bottom nav
 const PAGES_WITH_BOTTOM_NAV = [
