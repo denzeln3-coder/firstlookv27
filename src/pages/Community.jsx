@@ -47,8 +47,23 @@ export default function Community() {
   const { data: channels = [], isLoading: channelsLoading } = useQuery({
     queryKey: ['channels'],
     queryFn: async () => {
-      const { data } = await supabase.from('channels').select('*, creator:users(id, display_name, avatar_url)').order('member_count', { ascending: false });
-      return data || [];
+      const { data: channelsData } = await supabase.from('channels').select('*').order('member_count', { ascending: false });
+      if (!channelsData) return [];
+      
+      const creatorIds = [...new Set(channelsData.filter(c => c.created_by).map(c => c.created_by))];
+      
+      let creators = {};
+      if (creatorIds.length > 0) {
+        const { data: creatorsData } = await supabase.from('users').select('id, display_name, avatar_url').in('id', creatorIds);
+        if (creatorsData) {
+          creatorsData.forEach(c => { creators[c.id] = c; });
+        }
+      }
+      
+      return channelsData.map(channel => ({
+        ...channel,
+        creator: channel.created_by ? creators[channel.created_by] : null
+      }));
     }
   });
 
