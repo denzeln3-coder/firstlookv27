@@ -169,20 +169,22 @@ export default function Community() {
     if (!user) { navigate('/Login'); return; }
     joinChannelMutation.mutate(channelId);
   };
-
   const handleDeleteChannel = async (channelId) => {
     try {
-      // Delete related data first
+      // First get all discussion IDs for this channel
+      const { data: discussions } = await supabase.from('discussions').select('id').eq('channel_id', channelId);
+      const discussionIds = (discussions || []).map(d => d.id);
+      
+      // Delete related data
       await supabase.from('channel_members').delete().eq('channel_id', channelId);
-      await supabase.from('discussion_replies').delete().in('discussion_id', 
-        supabase.from('discussions').select('id').eq('channel_id', channelId)
-      );
-      await supabase.from('discussion_upvotes').delete().in('discussion_id',
-        supabase.from('discussions').select('id').eq('channel_id', channelId)
-      );
+      
+      if (discussionIds.length > 0) {
+        await supabase.from('discussion_replies').delete().in('discussion_id', discussionIds);
+        await supabase.from('discussion_upvotes').delete().in('discussion_id', discussionIds);
+      }
+      
       await supabase.from('discussions').delete().eq('channel_id', channelId);
       
-      // Delete the channel
       const { error } = await supabase.from('channels').delete().eq('id', channelId);
       
       if (error) throw error;
