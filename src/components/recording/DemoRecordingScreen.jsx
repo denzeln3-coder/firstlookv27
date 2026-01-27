@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, Pause, Square, Play, Mic, MicOff, Monitor, Video } from 'lucide-react';
+import { ArrowLeft, Pause, Square, Play, Mic, MicOff, Monitor, Video, Volume2 } from 'lucide-react';
 
 export default function DemoRecordingScreen({ recordingType = 'screen', onComplete, onBack }) {
   const videoRef = useRef(null);
@@ -15,6 +15,7 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
   const [error, setError] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasAudio, setHasAudio] = useState(true);
+  const [hasSystemAudio, setHasSystemAudio] = useState(false);
 
   const MAX_TIME = 120;
 
@@ -69,42 +70,88 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
 
   const startScreenRecording = async () => {
     try {
+      // Request screen share with explicit audio settings
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, cursor: 'always' },
-        audio: true
+        video: { 
+          width: { ideal: 1920, max: 1920 }, 
+          height: { ideal: 1080, max: 1080 }, 
+          frameRate: { ideal: 30, max: 30 }, 
+          cursor: 'always' 
+        },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          sampleRate: 48000
+        }
       });
 
+      // Check if system audio was captured
+      const systemAudioTracks = displayStream.getAudioTracks();
+      if (systemAudioTracks.length > 0) {
+        setHasSystemAudio(true);
+        console.log('✅ System audio captured');
+      } else {
+        setHasSystemAudio(false);
+        console.log('⚠️ No system audio - user may not have checked "Share audio"');
+      }
+
+      // Also get microphone audio
       let micStream = null;
       try {
         micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          audio: { 
+            echoCancellation: true, 
+            noiseSuppression: true, 
+            autoGainControl: true,
+            sampleRate: 48000
+          },
           video: false
         });
         audioStreamRef.current = micStream;
         setHasAudio(true);
+        console.log('✅ Microphone audio captured');
       } catch (micErr) {
+        console.warn('⚠️ Microphone not available:', micErr);
         setHasAudio(false);
       }
 
+      // Combine all tracks
       const tracks = [...displayStream.getVideoTracks()];
-      if (displayStream.getAudioTracks().length > 0) tracks.push(...displayStream.getAudioTracks());
-      if (micStream) tracks.push(...micStream.getAudioTracks());
+      
+      // Add system audio if available
+      if (systemAudioTracks.length > 0) {
+        tracks.push(...systemAudioTracks);
+      }
+      
+      // Add microphone audio
+      if (micStream) {
+        tracks.push(...micStream.getAudioTracks());
+      }
 
       const combinedStream = new MediaStream(tracks);
       streamRef.current = combinedStream;
 
-      if (screenPreviewRef.current) screenPreviewRef.current.srcObject = displayStream;
+      // Show screen preview (muted to avoid feedback loop)
+      if (screenPreviewRef.current) {
+        screenPreviewRef.current.srcObject = displayStream;
+      }
 
+      // Handle screen share ending
       displayStream.getVideoTracks()[0].onended = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') stopRecording();
+        console.log('⚠️ Screen sharing ended by user');
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          stopRecording();
+        }
       };
 
       startMediaRecorder(combinedStream);
     } catch (err) {
+      console.error('Screen share error:', err);
       if (err.name === 'NotAllowedError') {
         setError({
           title: 'Screen Sharing Cancelled',
-          message: 'You need to select a screen or window to share. Please try again.',
+          message: 'You need to select a screen or window to share. Please try again and make sure to check "Share audio" if you want system sounds.',
           actions: [
             { label: 'Try Again', onClick: () => setError(null) },
             { label: 'Go Back', onClick: onBack }
@@ -138,24 +185,45 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
   const startMediaRecorder = (stream) => {
     try {
       chunksRef.current = [];
-      const mimeTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+      
+      // Find best supported codec with audio
+      const mimeTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus', 
+        'video/webm;codecs=h264,opus',
+        'video/webm',
+        'video/mp4'
+      ];
+      
       let selectedMimeType = 'video/webm';
       for (const mt of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mt)) { selectedMimeType = mt; break; }
+        if (MediaRecorder.isTypeSupported(mt)) { 
+          selectedMimeType = mt; 
+          break; 
+        }
       }
+      
+      console.log('📹 Using codec:', selectedMimeType);
+      console.log('🎵 Audio tracks in stream:', stream.getAudioTracks().length);
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: selectedMimeType,
         videoBitsPerSecond: 8000000,
-        audioBitsPerSecond: 128000
+        audioBitsPerSecond: 192000 // Higher audio bitrate
       });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
+          console.log(`📦 Chunk: ${(e.data.size / 1024).toFixed(1)} KB`);
+        }
       };
+      
       mediaRecorder.onstop = () => handleRecordingComplete();
-      mediaRecorder.onerror = () => {
+      
+      mediaRecorder.onerror = (e) => {
+        console.error('MediaRecorder error:', e);
         setError({
           title: 'Recording Error',
           message: 'An error occurred during recording.',
@@ -173,7 +241,10 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
           return prev + 1;
         });
       }, 1000);
+      
+      console.log('🎬 Recording started!');
     } catch (err) {
+      console.error('MediaRecorder start error:', err);
       setError({
         title: 'Recording Failed',
         message: 'Unable to start recording. Please try again.',
@@ -194,7 +265,10 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.pause();
       setRecordingState('paused');
-      if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
+      if (timerIntervalRef.current) { 
+        clearInterval(timerIntervalRef.current); 
+        timerIntervalRef.current = null; 
+      }
     }
   };
 
@@ -212,7 +286,11 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
   };
 
   const stopRecording = useCallback(() => {
-    if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
+    console.log('🛑 Stopping recording...');
+    if (timerIntervalRef.current) { 
+      clearInterval(timerIntervalRef.current); 
+      timerIntervalRef.current = null; 
+    }
     if (mediaRecorderRef.current) {
       const state = mediaRecorderRef.current.state;
       if (state === 'recording' || state === 'paused') {
@@ -225,6 +303,9 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
   }, []);
 
   const handleRecordingComplete = () => {
+    console.log('✅ Processing recording...');
+    console.log(`Total chunks: ${chunksRef.current.length}`);
+    
     if (chunksRef.current.length === 0) {
       setError({
         title: 'Recording Empty',
@@ -233,7 +314,10 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
       });
       return;
     }
+    
     const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+    console.log(`Final video size: ${(blob.size / (1024 * 1024)).toFixed(2)} MB`);
+    
     if (blob.size < 1000) {
       setError({
         title: 'Recording Too Small',
@@ -242,6 +326,7 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
       });
       return;
     }
+    
     onComplete(blob);
   };
 
@@ -339,7 +424,11 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
               <div className="space-y-2">
                 <div className="flex items-center gap-3 p-2.5 bg-[#1C1C1E] rounded-lg text-left">
                   <Mic className="w-4 h-4 text-[#22C55E] flex-shrink-0" />
-                  <span className="text-[#A1A1AA] text-xs">Audio captured from your mic</span>
+                  <span className="text-[#A1A1AA] text-xs">Your voice will be recorded from mic</span>
+                </div>
+                <div className="flex items-center gap-3 p-2.5 bg-[#1C1C1E] rounded-lg text-left">
+                  <Volume2 className="w-4 h-4 text-[#22C55E] flex-shrink-0" />
+                  <span className="text-[#A1A1AA] text-xs">Check "Share audio" for system sounds</span>
                 </div>
                 <div className="flex items-center gap-3 p-2.5 bg-[#1C1C1E] rounded-lg text-left">
                   <span className="text-[#22C55E] text-xs font-bold flex-shrink-0">2:00</span>
@@ -349,8 +438,30 @@ export default function DemoRecordingScreen({ recordingType = 'screen', onComple
             </div>
           </div>
         ) : (
-          <div className="h-full p-4">
-            <video ref={screenPreviewRef} autoPlay playsInline muted className="w-full h-full object-contain rounded-lg bg-[#0A0A0A]" />
+          <div className="h-full p-4 flex flex-col">
+            {/* Audio indicators */}
+            <div className="flex justify-center gap-2 mb-2">
+              {hasAudio && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#22C55E]/20 rounded-full">
+                  <Mic className="w-3 h-3 text-[#22C55E]" />
+                  <span className="text-[#22C55E] text-[10px] font-medium">Mic</span>
+                </div>
+              )}
+              {hasSystemAudio && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#6366F1]/20 rounded-full">
+                  <Volume2 className="w-3 h-3 text-[#6366F1]" />
+                  <span className="text-[#6366F1] text-[10px] font-medium">System Audio</span>
+                </div>
+              )}
+            </div>
+            {/* Screen preview - muted to prevent feedback */}
+            <video 
+              ref={screenPreviewRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="flex-1 w-full object-contain rounded-lg bg-[#0A0A0A]" 
+            />
           </div>
         )}
       </div>

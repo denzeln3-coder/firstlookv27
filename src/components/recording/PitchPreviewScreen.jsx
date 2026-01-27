@@ -195,7 +195,6 @@ export default function PitchPreviewScreen({ videoBlob, onContinue, onReRecord, 
                 src={videoUrl}
                 className="w-full h-full object-cover"
                 playsInline
-                muted
                 preload="auto"
                 onClick={togglePlayPause}
                 onError={(e) => {
