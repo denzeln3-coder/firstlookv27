@@ -47,7 +47,7 @@ export default function Community() {
   const { data: channels = [], isLoading: channelsLoading } = useQuery({
     queryKey: ['channels'],
     queryFn: async () => {
-      const { data } = await supabase.from('channels').select('*, creator:users(id, full_name, avatar_url)').order('member_count', { ascending: false });
+      const { data } = await supabase.from('channels').select('*, creator:users(id, display_name, avatar_url)').order('member_count', { ascending: false });
       return data || [];
     }
   });
@@ -231,7 +231,7 @@ export default function Community() {
                       <div className="flex items-center gap-3 mt-2">
                         <span className="text-[#636366] text-[12px] flex items-center gap-1"><Users className="w-3 h-3" />{channel.member_count || 0} members</span>
                         {channel.creator && (
-                          <span className="text-[#8E8E93] text-[12px]">by {channel.creator?.full_name || 'Anonymous'}</span>
+                          <span className="text-[#8E8E93] text-[12px]">by {channel.creator?.display_name || 'Anonymous'}</span>
                         )}
                       </div>
                     </div>
@@ -334,7 +334,7 @@ export default function Community() {
                     {founder.avatar_url ? <img src={founder.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-white text-[18px] font-bold">{(founder.display_name || founder.username || 'U')?.[0]?.toUpperCase()}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-semibold text-[15px]">{founder.display_name || founder.full_name || 'Founder'}</h3>
+                    <h3 className="text-white font-semibold text-[15px]">{founder.display_name || founder.display_name || 'Founder'}</h3>
                     {founder.username && <p className="text-[#8E8E93] text-[13px]">@{founder.username}</p>}
                     {(founder.city || founder.company_name) && <div className="flex items-center gap-2 mt-1 text-[#636366] text-[12px]">{founder.city && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{founder.city}</span>}{founder.company_name && <span>• {founder.company_name}</span>}</div>}
                     {founder.collab_modes && founder.collab_modes.length > 0 && (
