@@ -38,7 +38,7 @@ export default function Login() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName } }
+          options: { data: { display_name: fullName } }
         });
         
         if (signUpError) throw signUpError;
@@ -67,7 +67,7 @@ export default function Login() {
           const { error: upsertError } = await supabase.from('users').upsert({
             id: data.user.id,
             email: email,
-            full_name: fullName,
+            display_name: fullName,
             created_at: new Date().toISOString()
           }, { onConflict: 'id' });
           
@@ -114,7 +114,7 @@ export default function Login() {
       const { error } = await supabase.from('users').upsert({
         id: newUserId,
         email: email,
-        full_name: fullName || null,
+        display_name: fullName || null,
         user_type: userType.id,
         created_at: new Date().toISOString()
       }, { onConflict: 'id' });
