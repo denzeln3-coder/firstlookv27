@@ -20,12 +20,11 @@ import { createPageUrl } from '../utils';
 import PitchModal from '../components/PitchModal';
 import NotificationBell from '../components/NotificationBell';
 
-let InstallPrompt, OnboardingTour, FeatureTooltip, WelcomeCTA, AIRecommendationCard;
+let InstallPrompt, OnboardingTour, FeatureTooltip, WelcomeCTA;
 try { InstallPrompt = require('../components/InstallPrompt').default; } catch { InstallPrompt = () => null; }
 try { OnboardingTour = require('../components/OnboardingTour').default; } catch { OnboardingTour = () => null; }
 try { FeatureTooltip = require('../components/FeatureTooltip').default; } catch { FeatureTooltip = () => null; }
 try { WelcomeCTA = require('../components/WelcomeCTA').default; } catch { WelcomeCTA = () => null; }
-try { AIRecommendationCard = require('../components/AIRecommendationCard').default; } catch { AIRecommendationCard = () => null; }
 
 function useDebouncedValue(value, delay = 250) {
   const [debounced, setDebounced] = useState(value);
@@ -36,20 +35,12 @@ function useDebouncedValue(value, delay = 250) {
   return debounced;
 }
 
-// Detect mobile for lighter loading
 const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
-function getPrefetchStrategy() {
-  if (isMobile) return { prefetchCount: 0 }; // No prefetch on mobile
-  const connection = navigator.connection;
-  if (connection) {
-    if (connection.saveData) return { prefetchCount: 0 };
-    if (connection.effectiveType === '4g') return { prefetchCount: 4 };
-    if (connection.effectiveType === '3g') return { prefetchCount: 2 };
-    return { prefetchCount: 0 };
-  }
-  return { prefetchCount: 2 };
-}
+// Track which videos are currently playing (limit on mobile)
+const activeVideos = new Set();
+const MAX_MOBILE_VIDEOS = 2;
+const MAX_DESKTOP_VIDEOS = 6;
 
 const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
   const containerRef = useRef(null);
@@ -57,22 +48,21 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
   const [inView, setInView] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [videoError, setVideoError] = useState(false);
-
-  const { prefetchCount } = getPrefetchStrategy();
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const hasVideo = !!(pitch.video_url && pitch.video_url.trim() && !videoError);
   const hasThumbnail = !!(pitch.thumbnail_url && pitch.thumbnail_url.trim());
-  // Only load video if in view AND not on mobile (mobile plays on click only)
-  const shouldLoad = hasVideo && inView && !isMobile && index < prefetchCount;
-  
   const displayName = pitch.startup_name || pitch.name || 'Untitled';
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    
     const obs = new IntersectionObserver(
-      ([entry]) => setInView(entry.isIntersecting),
-      { threshold: 0.1, rootMargin: '100px' }
+      ([entry]) => {
+        setInView(entry.isIntersecting);
+      },
+      { threshold: 0.5, rootMargin: '50px' }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -80,14 +70,25 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
 
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || !hasVideo || isMobile) return;
+    if (!v || !hasVideo) return;
 
-    if (shouldLoad) {
-      v.play().catch(() => {});
-    } else {
+    const maxVideos = isMobile ? MAX_MOBILE_VIDEOS : MAX_DESKTOP_VIDEOS;
+
+    if (inView && activeVideos.size < maxVideos && !activeVideos.has(pitch.id)) {
+      activeVideos.add(pitch.id);
+      v.play().then(() => setIsPlaying(true)).catch(() => {
+        activeVideos.delete(pitch.id);
+      });
+    } else if (!inView && activeVideos.has(pitch.id)) {
+      activeVideos.delete(pitch.id);
       v.pause();
+      setIsPlaying(false);
     }
-  }, [shouldLoad, hasVideo]);
+
+    return () => {
+      activeVideos.delete(pitch.id);
+    };
+  }, [inView, hasVideo, pitch.id]);
 
   return (
     <button
@@ -112,17 +113,17 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
           </div>
         )}
 
-        {hasVideo && !isMobile && (
+        {hasVideo && (
           <video
             ref={videoRef}
-            src={shouldLoad ? pitch.video_url : undefined}
+            src={inView ? pitch.video_url : undefined}
             poster={hasThumbnail ? pitch.thumbnail_url : undefined}
             loop
             muted
             playsInline
             preload="none"
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
-            onLoadedMetadata={() => setVideoReady(true)}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${videoReady && isPlaying ? 'opacity-100' : 'opacity-0'}`}
+            onLoadedData={() => setVideoReady(true)}
             onError={() => setVideoError(true)}
           />
         )}
@@ -198,7 +199,6 @@ export default function Explore() {
     setCurrentTooltip(null);
   };
 
-  // Fetch user - but don't block render
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
@@ -219,7 +219,6 @@ export default function Explore() {
   const isInvestor = user?.user_type === 'investor';
   const isHunter = user?.user_type === 'hunter';
 
-  // OPTIMIZED: Reduced limit from 90 to 30 for faster initial load
   const { data: rawPitches = [], isLoading: pitchesLoading } = useQuery({
     queryKey: ['pitches'],
     queryFn: async () => {
@@ -232,10 +231,7 @@ export default function Explore() {
         .order('created_at', { ascending: false })
         .limit(30);
       
-      if (error) {
-        console.error('Error fetching startups:', error);
-        return [];
-      }
+      if (error) return [];
       return data || [];
     },
     staleTime: 60000,
@@ -350,7 +346,6 @@ export default function Explore() {
 
   return (
     <div className="min-h-screen bg-[#000000] w-full">
-      {/* Header */}
       <div className="fixed top-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg z-20 border-b border-[rgba(255,255,255,0.06)]">
         <div className="px-4 py-3 flex items-center justify-between">
           <h1 className="text-[22px] font-bold">
@@ -536,7 +531,6 @@ export default function Explore() {
         )}
       </div>
 
-      {/* Content */}
       <div className={showFilters ? 'pt-64' : 'pt-28'}>
         {user && showWelcomeCTA && WelcomeCTA && (
           <div className="px-4 mb-4">
