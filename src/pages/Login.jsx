@@ -57,35 +57,39 @@ export default function Login() {
           .single();
         
         if (existingProfile?.user_type) {
-          // User already has a type, skip selection
           await new Promise(resolve => setTimeout(resolve, 300));
           navigate(getRedirectPath(existingProfile.user_type));
           return;
         }
         
-        // Create basic profile without user_type
-        await supabase.from('users').upsert({
-          id: data.user.id,
-          email: email,
-          full_name: fullName,
-          created_at: new Date().toISOString()
-        }, { onConflict: 'id' });
+        // Create basic profile - with better error handling
+        try {
+          const { error: upsertError } = await supabase.from('users').upsert({
+            id: data.user.id,
+            email: email,
+            full_name: fullName,
+            created_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+          
+          if (upsertError) {
+            console.error('Profile creation error:', upsertError);
+          }
+        } catch (profileErr) {
+          console.error('Profile creation failed:', profileErr);
+        }
         
         setNewUserId(data.user.id);
         setStep('userType');
         
       } else {
-        // Sign in
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
         if (!data.session) throw new Error('Login failed - no session returned');
         
         await new Promise(resolve => setTimeout(resolve, 300));
         
-        // Get user type and redirect
         const { data: profile } = await supabase.from('users').select('user_type').eq('id', data.user.id).single();
         
-        // If no user_type set, show selection
         if (!profile?.user_type) {
           setNewUserId(data.user.id);
           setStep('userType');
@@ -104,9 +108,22 @@ export default function Login() {
 
   const handleUserTypeSelect = async (userType) => {
     setLoading(true);
+    setError(null);
+    
     try {
-      const { error } = await supabase.from('users').update({ user_type: userType.id }).eq('id', newUserId);
-      if (error) throw error;
+      const { error } = await supabase.from('users').upsert({
+        id: newUserId,
+        email: email,
+        full_name: fullName || null,
+        user_type: userType.id,
+        created_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      
+      if (error) {
+        console.error('Error setting user type:', error);
+        throw new Error('Failed to save profile. Please try again.');
+      }
+      
       await new Promise(resolve => setTimeout(resolve, 300));
       navigate(userType.redirect);
     } catch (err) {
@@ -116,7 +133,6 @@ export default function Login() {
     }
   };
 
-  // User Type Selection Step
   if (step === 'userType') {
     return (
       <div className="min-h-screen bg-[#000000] flex items-center justify-center px-4">
@@ -163,7 +179,6 @@ export default function Login() {
     );
   }
 
-  // Auth Step
   return (
     <div className="min-h-screen bg-[#000000] flex items-center justify-center px-4">
       <div className="w-full max-w-md">
