@@ -235,7 +235,7 @@ export default function Explore() {
       return data || [];
     },
     staleTime: 60000,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false
   });
 
