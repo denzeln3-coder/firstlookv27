@@ -202,6 +202,7 @@ export default function Explore() {
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
+      console.log('Fetching pitches...');
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser) {
@@ -222,6 +223,7 @@ export default function Explore() {
   const { data: rawPitches = [], isLoading: pitchesLoading } = useQuery({
     queryKey: ['pitches'],
     queryFn: async () => {
+      console.log('Fetching pitches...');
       const { data, error } = await supabase
         .from('startups')
         .select('id, startup_name, name, thumbnail_url, video_url, category, product_stage, view_count, upvote_count, created_at, founder_id, one_liner')
@@ -242,6 +244,7 @@ export default function Explore() {
   const { data: unreadMessagesCount = 0 } = useQuery({
     queryKey: ['unreadMessages', user?.id],
     queryFn: async () => {
+      console.log('Fetching pitches...');
       if (!user) return 0;
       const { count, error } = await supabase
         .from('direct_messages')
@@ -257,6 +260,7 @@ export default function Explore() {
   const { data: followingList = [] } = useQuery({
     queryKey: ['followingList', user?.id],
     queryFn: async () => {
+      console.log('Fetching pitches...');
       if (!user) return [];
       const { data, error } = await supabase
         .from('follows')
