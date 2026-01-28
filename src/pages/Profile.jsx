@@ -203,6 +203,31 @@ export default function Profile() {
     enabled: !!profileUser
   });
 
+  // Accurate count queries for stats display
+  const { data: followerCount = 0 } = useQuery({
+    queryKey: ['followerCount', profileUser?.id],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('following_id', profileUser.id);
+      return count || 0;
+    },
+    enabled: !!profileUser
+  });
+
+  const { data: followingCount = 0 } = useQuery({
+    queryKey: ['followingCount', profileUser?.id],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('follower_id', profileUser.id);
+      return count || 0;
+    },
+    enabled: !!profileUser
+  });
+
   const deletePitchMutation = useMutation({
     mutationFn: async (pitchId) => {
       await supabase.from('early_access_requests').delete().eq('startup_id', pitchId);
@@ -236,7 +261,7 @@ export default function Profile() {
         .select('id')
         .eq('follower_id', currentUser.id)
         .eq('following_id', profileUser.id)
-        .single();
+        .maybeSingle();
 
       if (existingFollow) {
         await supabase.from('follows').delete().eq('id', existingFollow.id);
@@ -253,14 +278,16 @@ export default function Profile() {
       queryClient.invalidateQueries({ queryKey: ['isFollowing'] });
       queryClient.invalidateQueries({ queryKey: ['followers'] });
       queryClient.invalidateQueries({ queryKey: ['following'] });
+      queryClient.invalidateQueries({ queryKey: ['followerCount'] });
+      queryClient.invalidateQueries({ queryKey: ['followingCount'] });
     }
   });
 
   const stats = useMemo(() => ({
     pitches: userPitches.length,
-    followers: followers.length,
-    following: following.length
-  }), [userPitches, followers, following]);
+    followers: followerCount,
+    following: followingCount
+  }), [userPitches, followerCount, followingCount]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
