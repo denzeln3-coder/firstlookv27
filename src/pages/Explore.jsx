@@ -20,7 +20,6 @@ import { createPageUrl } from '../utils';
 import PitchModal from '../components/PitchModal';
 import NotificationBell from '../components/NotificationBell';
 
-// Safe dynamic imports
 let InstallPrompt, OnboardingTour, FeatureTooltip, WelcomeCTA, AIRecommendationCard;
 try { InstallPrompt = require('../components/InstallPrompt').default; } catch { InstallPrompt = () => null; }
 try { OnboardingTour = require('../components/OnboardingTour').default; } catch { OnboardingTour = () => null; }
@@ -37,21 +36,19 @@ function useDebouncedValue(value, delay = 250) {
   return debounced;
 }
 
+// Detect mobile for lighter loading
+const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
 function getPrefetchStrategy() {
+  if (isMobile) return { prefetchCount: 0 }; // No prefetch on mobile
   const connection = navigator.connection;
   if (connection) {
-    if (connection.saveData) return { prefetchCount: 2 };
-    if (connection.effectiveType === '4g') return { prefetchCount: 6 };
-    if (connection.effectiveType === '3g') return { prefetchCount: 3 };
-    return { prefetchCount: 2 };
+    if (connection.saveData) return { prefetchCount: 0 };
+    if (connection.effectiveType === '4g') return { prefetchCount: 4 };
+    if (connection.effectiveType === '3g') return { prefetchCount: 2 };
+    return { prefetchCount: 0 };
   }
-  return { prefetchCount: 4 };
-}
-
-function shouldPrefetch() {
-  const connection = navigator.connection;
-  if (connection?.saveData) return false;
-  return true;
+  return { prefetchCount: 2 };
 }
 
 const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
@@ -60,14 +57,13 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
   const [inView, setInView] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const hasLoadedRef = useRef(false);
 
-  const canPrefetch = shouldPrefetch();
   const { prefetchCount } = getPrefetchStrategy();
 
   const hasVideo = !!(pitch.video_url && pitch.video_url.trim() && !videoError);
   const hasThumbnail = !!(pitch.thumbnail_url && pitch.thumbnail_url.trim());
-  const shouldLoad = hasVideo && canPrefetch && (inView || index < prefetchCount);
+  // Only load video if in view AND not on mobile (mobile plays on click only)
+  const shouldLoad = hasVideo && inView && !isMobile && index < prefetchCount;
   
   const displayName = pitch.startup_name || pitch.name || 'Untitled';
 
@@ -76,7 +72,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
     if (!el) return;
     const obs = new IntersectionObserver(
       ([entry]) => setInView(entry.isIntersecting),
-      { threshold: 0.25, rootMargin: '200px' }
+      { threshold: 0.1, rootMargin: '100px' }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -84,28 +80,14 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
 
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || !hasVideo) return;
+    if (!v || !hasVideo || isMobile) return;
 
     if (shouldLoad) {
-      if (!hasLoadedRef.current) {
-        hasLoadedRef.current = true;
-        try { v.load(); } catch (error) { console.error(`[Pitch ${pitch.id}] Load error:`, error); }
-      }
-      v.play().catch((error) => {
-        if (error.name !== "NotAllowedError" && error.name !== "AbortError") {
-          console.warn(`[Pitch ${pitch.id}] Playback error:`, error.message);
-        }
-      });
+      v.play().catch(() => {});
     } else {
       v.pause();
     }
-  }, [shouldLoad, pitch.id, hasVideo]);
-
-  const handleVideoError = () => {
-    console.error(`[Pitch ${pitch.id}] Video error`);
-    setVideoError(true);
-    setVideoReady(false);
-  };
+  }, [shouldLoad, hasVideo]);
 
   return (
     <button
@@ -120,7 +102,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
             src={pitch.thumbnail_url}
             alt={displayName}
             className="absolute inset-0 w-full h-full object-cover"
-            loading="lazy"
+            loading={index < 8 ? "eager" : "lazy"}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#6366F1] to-[#8B5CF6]">
@@ -130,7 +112,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
           </div>
         )}
 
-        {hasVideo && (
+        {hasVideo && !isMobile && (
           <video
             ref={videoRef}
             src={shouldLoad ? pitch.video_url : undefined}
@@ -138,10 +120,10 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
             loop
             muted
             playsInline
-            preload={index < prefetchCount ? 'metadata' : 'none'}
+            preload="none"
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
             onLoadedMetadata={() => setVideoReady(true)}
-            onError={handleVideoError}
+            onError={() => setVideoError(true)}
           />
         )}
 
@@ -216,7 +198,7 @@ export default function Explore() {
     setCurrentTooltip(null);
   };
 
-  // Fetch user with user_type for role-based UI
+  // Fetch user - but don't block render
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
@@ -233,22 +215,22 @@ export default function Explore() {
     refetchOnWindowFocus: false
   });
 
-  // Role-based permissions
   const isFounder = user?.user_type === 'founder';
   const isInvestor = user?.user_type === 'investor';
   const isHunter = user?.user_type === 'hunter';
 
+  // OPTIMIZED: Reduced limit from 90 to 30 for faster initial load
   const { data: rawPitches = [], isLoading: pitchesLoading } = useQuery({
     queryKey: ['pitches'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('startups')
-        .select('*')
+        .select('id, startup_name, name, thumbnail_url, video_url, category, product_stage, view_count, upvote_count, created_at, founder_id, one_liner')
         .eq('is_published', true)
         .eq('review_status', 'approved')
         .not('video_url', 'is', null)
         .order('created_at', { ascending: false })
-        .limit(90);
+        .limit(30);
       
       if (error) {
         console.error('Error fetching startups:', error);
@@ -258,11 +240,9 @@ export default function Explore() {
     },
     staleTime: 60000,
     refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchInterval: false
+    refetchOnWindowFocus: false
   });
 
-  // Unread messages count for header icon
   const { data: unreadMessagesCount = 0 } = useQuery({
     queryKey: ['unreadMessages', user?.id],
     queryFn: async () => {
@@ -275,9 +255,7 @@ export default function Explore() {
       return error ? 0 : (count || 0);
     },
     enabled: !!user,
-    staleTime: 15000,
-    refetchOnWindowFocus: true,
-    refetchInterval: 30000
+    staleTime: 15000
   });
 
   const { data: followingList = [] } = useQuery({
@@ -291,11 +269,8 @@ export default function Explore() {
       return error ? [] : (data || []).map((f) => f.following_id);
     },
     enabled: !!user && sortBy === 'following',
-    staleTime: 60000,
-    refetchOnWindowFocus: false
+    staleTime: 60000
   });
-
-  const isLoading = pitchesLoading;
 
   const filteredPitches = useMemo(() => {
     if (!rawPitches.length) return [];
@@ -409,7 +384,6 @@ export default function Explore() {
 
             {user ? (
               <>
-                {/* Only show Studio button for founders */}
                 {isFounder && (
                   <button onClick={() => navigate(createPageUrl('CreatorStudio'))} className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-[rgba(255,255,255,0.06)] text-white text-[12px] font-semibold rounded-xl hover:bg-[rgba(255,255,255,0.1)] transition-all duration-200">
                     <Palette className="w-4 h-4" />
@@ -417,7 +391,6 @@ export default function Explore() {
                   </button>
                 )}
 
-                {/* Show Record button for founders, Deal Flow for investors, Hunt for hunters */}
                 {isFounder ? (
                   <button onClick={handleRecordPitch} className="flex items-center gap-1.5 px-3 py-2 bg-[#8B5CF6] text-white text-[12px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
                     <Video className="w-4 h-4" />
@@ -452,7 +425,6 @@ export default function Explore() {
           </div>
         </div>
 
-        {/* Search */}
         {showSearch && (
           <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.06)] slide-up">
             <div className="relative">
@@ -486,7 +458,6 @@ export default function Explore() {
           </div>
         )}
 
-        {/* Filter tabs */}
         <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 min-w-max">
             {[
@@ -514,7 +485,6 @@ export default function Explore() {
           </div>
         </div>
 
-        {/* Category/Stage filters */}
         {showFilters && (
           <div className="px-4 py-4 border-t border-[rgba(255,255,255,0.06)] slide-up">
             <div className="space-y-4">
@@ -574,10 +544,10 @@ export default function Explore() {
           </div>
         )}
 
-        {isLoading ? (
+        {pitchesLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
-            {[...Array(12)].map((_, i) => (
-              <div key={i} className="relative w-full bg-[#18181B] rounded-sm skeleton" style={{ paddingBottom: '125%' }} />
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="relative w-full bg-[#18181B] rounded-sm animate-pulse" style={{ paddingBottom: '125%' }} />
             ))}
           </div>
         ) : filteredPitches.length === 0 ? (
@@ -604,8 +574,6 @@ export default function Explore() {
           </div>
         )}
       </div>
-
-      {/* Bottom Nav is now handled by Layout.jsx */}
 
       {selectedPitch && <PitchModal pitch={selectedPitch} onClose={() => setSelectedPitch(null)} />}
       {InstallPrompt && <InstallPrompt />}
