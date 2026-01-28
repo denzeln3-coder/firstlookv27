@@ -32,6 +32,7 @@ export default function Community() {
   const [selectedMeetup, setSelectedMeetup] = useState(null);
   const [collabFilter, setCollabFilter] = useState(null);
   const [deletingChannel, setDeletingChannel] = useState(null);
+  const [deletingMeetup, setDeletingMeetup] = useState(null);
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -195,6 +196,54 @@ export default function Community() {
     } catch (error) {
       console.error('Error deleting channel:', error);
       toast.error('Failed to delete channel');
+
+  const handleDeleteMeetup = async (meetupId) => {
+    try {
+      await supabase.from('meetup_attendees').delete().eq('meetup_id', meetupId);
+      await supabase.from('meetup_comments').delete().eq('meetup_id', meetupId);
+      const { error } = await supabase.from('meetups').delete().eq('id', meetupId);
+      if (error) throw error;
+      toast.success('Meetup deleted');
+      setDeletingMeetup(null);
+      setSelectedMeetup(null);
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
+    } catch (error) {
+      console.error('Error deleting meetup:', error);
+      toast.error('Failed to delete meetup');
+    }
+  };
+    }
+
+  const handleDeleteMeetup = async (meetupId) => {
+    try {
+      await supabase.from('meetup_attendees').delete().eq('meetup_id', meetupId);
+      await supabase.from('meetup_comments').delete().eq('meetup_id', meetupId);
+      const { error } = await supabase.from('meetups').delete().eq('id', meetupId);
+      if (error) throw error;
+      toast.success('Meetup deleted');
+      setDeletingMeetup(null);
+      setSelectedMeetup(null);
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
+    } catch (error) {
+      console.error('Error deleting meetup:', error);
+      toast.error('Failed to delete meetup');
+    }
+  };
+  };
+
+  const handleDeleteMeetup = async (meetupId) => {
+    try {
+      await supabase.from('meetup_attendees').delete().eq('meetup_id', meetupId);
+      await supabase.from('meetup_comments').delete().eq('meetup_id', meetupId);
+      const { error } = await supabase.from('meetups').delete().eq('id', meetupId);
+      if (error) throw error;
+      toast.success('Meetup deleted');
+      setDeletingMeetup(null);
+      setSelectedMeetup(null);
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
+    } catch (error) {
+      console.error('Error deleting meetup:', error);
+      toast.error('Failed to delete meetup');
     }
   };
 
@@ -340,6 +389,14 @@ export default function Community() {
                         <span className="text-[#636366] text-[11px]">• {meetup.attendee_count || 0}/{meetup.max_attendees} going</span>
                       </div>
                     </div>
+                    {user?.id === meetup.host_id && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDeletingMeetup(meetup); }}
+                          className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     <div className="flex flex-col items-end gap-2">
                       {isGoing && (
                         <span className="px-2 py-1 bg-green-500/20 text-green-400 text-[11px] font-semibold rounded-lg flex items-center gap-1">
@@ -431,6 +488,30 @@ export default function Community() {
           onRSVP={handleRSVP}
           isPending={rsvpMutation.isPending}
         />
+      )}
+
+      {/* Delete Meetup Confirmation Modal */}
+      {deletingMeetup && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDeletingMeetup(null)}>
+          <div className="bg-[#1C1C1E] rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-bold text-lg mb-2">Delete Meetup?</h3>
+            <p className="text-gray-400 text-sm mb-6">This will permanently delete "{deletingMeetup.title}" and remove all RSVPs.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingMeetup(null)}
+                className="flex-1 py-2.5 bg-[#2C2C2E] text-white rounded-xl font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteMeetup(deletingMeetup.id)}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-medium"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Channel Confirmation Modal */}
