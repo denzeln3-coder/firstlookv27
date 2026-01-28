@@ -107,7 +107,7 @@ export default function Community() {
   const { data: founders = [], isLoading: foundersLoading } = useQuery({
     queryKey: ['founders', searchQuery, collabFilter, founderSort, cityFilter],
     queryFn: async () => {
-      let query = supabase.from('users').select('*, startups(id, thumbnail_url, video_url, startup_name)').limit(50);
+      let query = supabase.from('users').select('*').limit(50);
       if (searchQuery) query = query.or(`display_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,city.ilike.%${searchQuery}%,bio.ilike.%${searchQuery}%`);
       if (collabFilter) query = query.contains('collab_modes', [collabFilter]);
       if (cityFilter) query = query.ilike('city', `%${cityFilter}%`);
@@ -123,7 +123,7 @@ export default function Community() {
   const { data: featuredFounders = [] } = useQuery({
     queryKey: ['featuredFounders'],
     queryFn: async () => {
-      const { data } = await supabase.from('users').select('*, startups(id, thumbnail_url, video_url, startup_name)').order('follower_count', { ascending: false, nullsFirst: false }).limit(8);
+      const { data } = await supabase.from('users').select('*').order('follower_count', { ascending: false, nullsFirst: false }).limit(8);
       return (data || []).map(f => ({ ...f, latest_pitch: f.startups?.[0] || null, pitch_count: f.startups?.length || 0 }));
     },
     enabled: activeTab === 'founders'
