@@ -108,7 +108,7 @@ export default function PitchModal({ pitch, onClose, isInvestorView = false, isH
       if (!user || !pitch?.founder_id) return;
       const { data: existingFollow } = await supabase.from('follows').select('*').eq('follower_id', user.id).eq('following_id', pitch.founder_id);
       if (existingFollow && existingFollow.length > 0) { await supabase.from('follows').delete().eq('id', existingFollow[0].id); toast.success('Unfollowed'); }
-      else { await supabase.from('follows').insert({ follower_id: user.id, following_id: pitch.founder_id }); toast.success(`Following ${founder?.display_name || founder?.full_name || founder?.username || 'founder'}`); }
+      else { await supabase.from('follows').insert({ follower_id: user.id, following_id: pitch.founder_id }); toast.success('Following'); }
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['isFollowingFounder'] }); }
   });
