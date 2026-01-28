@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -6,22 +6,17 @@ import { ArrowRight, Video, Search, TrendingUp } from 'lucide-react';
 
 export default function Home() {
   const navigate = useNavigate();
-  const { user, isLoadingAuth: isLoading } = useAuth();
+  const { user, isLoadingAuth } = useAuth();
 
-  React.useEffect(() => {
-    if (!isLoading && user) {
+  useEffect(() => {
+    // Only redirect AFTER auth check completes AND user exists
+    if (!isLoadingAuth && user) {
       navigate(createPageUrl('Explore'));
     }
-  }, [user, isLoading, navigate]);
+  }, [user, isLoadingAuth, navigate]);
 
-  if (isLoading || user) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
-  }
-
+  // Show landing page immediately - no loading screen!
+  // If user is logged in, they'll be redirected once auth completes
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="relative min-h-screen flex flex-col items-center justify-center px-6 pb-20">
