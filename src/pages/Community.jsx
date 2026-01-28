@@ -203,15 +203,28 @@ export default function Community() {
 
   const handleDeleteMeetup = async (meetupId) => {
     try {
-      await supabase.from('meetup_attendees').delete().eq('meetup_id', meetupId);
-      await supabase.from('meetup_comments').delete().eq('meetup_id', meetupId);
-      const { error } = await supabase.from('meetups').delete().eq('id', meetupId);
-      if (error) throw error;
-      toast.success('Meetup deleted');
+      // Delete attendees first (ignore errors)
+      await supabase.from("meetup_attendees").delete().eq("meetup_id", meetupId).then(() => {}).catch(() => {});
+      
+      // Try to delete comments - table might not exist, so ignore errors
+      await supabase.from("meetup_comments").delete().eq("meetup_id", meetupId).then(() => {}).catch(() => {});
+      
+      // Delete the meetup
+      const { error } = await supabase.from("meetups").delete().eq("id", meetupId);
+      
+      if (error) {
+        console.error("Meetup delete error:", error);
+        throw error;
+      }
+      
+      toast.success("Meetup deleted");
       setDeletingMeetup(null);
       setSelectedMeetup(null);
-      queryClient.invalidateQueries({ queryKey: ['meetups'] });
-    } catch (error) { toast.error('Failed to delete meetup'); }
+      queryClient.invalidateQueries({ queryKey: ["meetups"] });
+    } catch (error) {
+      console.error("Delete failed:", error);
+      toast.error("Failed to delete meetup");
+    }
   };
 
   const handleFollowFounder = (founderId) => { if (!user) { navigate('/Login'); return; } followMutation.mutate(founderId); };
