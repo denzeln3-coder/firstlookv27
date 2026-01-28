@@ -212,7 +212,7 @@ export default function Explore() {
         return null;
       } catch { return null; }
     },
-    staleTime: 60000,
+    staleTime: 0,
     refetchOnWindowFocus: false
   });
 
@@ -236,7 +236,7 @@ export default function Explore() {
       if (error) return [];
       return data || [];
     },
-    staleTime: 60000,
+    staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: false
   });
