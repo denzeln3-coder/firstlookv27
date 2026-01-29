@@ -49,7 +49,7 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
   }, [formData]);
 
   useEffect(() => {
-    checkPermissionsAndStartCamera();
+    checkPermissionsAndStartCamera().then(() => console.log('🎬 Camera setup complete')).catch(e => console.error('🎬 Camera setup failed:', e));
     return () => cleanup();
   }, []);
 
@@ -108,7 +108,7 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
           title: 'Camera Access Required',
           message: 'Please allow camera and microphone access to record your pitch.',
           actions: [
-            { label: 'Try Again', onClick: () => { setError(null); checkPermissionsAndStartCamera(); } },
+            { label: 'Try Again', onClick: () => { setError(null); checkPermissionsAndStartCamera().then(() => console.log('🎬 Camera setup complete')).catch(e => console.error('🎬 Camera setup failed:', e)); } },
             { label: 'Go Back', onClick: onBack }
           ]
         });
