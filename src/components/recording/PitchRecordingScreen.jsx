@@ -70,9 +70,9 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
 
   const getVideoConstraints = () => ({
     facingMode,
-    width: { ideal: 1080, min: 720 },
-    height: { ideal: 1920, min: 1280 },
-    aspectRatio: { ideal: 9/16 },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    
     frameRate: { ideal: 30, min: 24 }
   });
 
