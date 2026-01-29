@@ -323,17 +323,15 @@ export default function RecordPitch() {
         }
       }
       
-      setUploadProgress(20);
-      setUploadStage('Uploading pitch video...');
       
-      const pitchUpload = await uploadVideo(pitchFile, 'pitches');
-      setUploadProgress(40);
+   setUploadStage('Uploading pitch video...');
+      
+      const pitchUpload = await uploadVideo(pitchFile, 'pitches', (p) => setUploadProgress(5 + Math.round(p * 0.35)));
       
       let demoUpload = null;
       if (demoFile) {
         setUploadStage('Uploading demo video...');
-        demoUpload = await uploadVideo(demoFile, 'demos');
-        setUploadProgress(55);
+        demoUpload = await uploadVideo(demoFile, 'demos', (p) => setUploadProgress(40 + Math.round(p * 0.15)));
       }
       
       setUploadStage('Uploading thumbnail...');
