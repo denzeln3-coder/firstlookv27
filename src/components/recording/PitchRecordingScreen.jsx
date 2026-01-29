@@ -91,7 +91,10 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
         audio: getAudioConstraints()
       });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream; videoRef.current.play();
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
       setPermissionsGranted(true);
     } catch (err) {
       console.warn('High quality failed, trying fallback:', err);
@@ -101,7 +104,10 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
           audio: true
         });
         streamRef.current = fallbackStream;
-        if (videoRef.current) videoRef.current.srcObject = fallbackStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallbackStream;
+          await videoRef.current.play();
+        }
         setPermissionsGranted(true);
       } catch (fallbackErr) {
         setError({
@@ -126,7 +132,10 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
         audio: getAudioConstraints()
       });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream; videoRef.current.play();
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
     } catch (err) {
       console.warn('Restart camera failed, trying fallback');
       try {
@@ -135,7 +144,10 @@ export default function PitchRecordingScreen({ onComplete, onBack, formData = {}
           audio: true
         });
         streamRef.current = fallbackStream;
-        if (videoRef.current) videoRef.current.srcObject = fallbackStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallbackStream;
+          await videoRef.current.play();
+        }
       } catch (fallbackErr) {
         console.error('Fallback camera failed:', fallbackErr);
       }
