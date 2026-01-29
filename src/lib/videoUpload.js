@@ -5,7 +5,6 @@ export async function uploadVideo(file, folder = 'pitches', onProgress) {
   const fileExt = file.name.split('.').pop();
   const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
   
-  // Call onProgress with fake milestones since SDK doesn't support real progress
   if (onProgress) onProgress(10);
   
   const { data, error } = await supabase.storage
@@ -19,7 +18,6 @@ export async function uploadVideo(file, folder = 'pitches', onProgress) {
   
   if (error) throw error;
   
-  // Get public URL
   const { data: { publicUrl } } = supabase.storage
     .from('videos')
     .getPublicUrl(fileName);
