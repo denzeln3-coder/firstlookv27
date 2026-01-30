@@ -527,7 +527,7 @@ export default function Explore() {
               </div>
 
               {(selectedCategory !== 'all' || selectedStage !== 'all') && (
-                <button onClick={() => { setSelectedCategory('all'); setSelectedStage('all'); }} className="text-[#8B5CF6] hover:text-[#A78BFA] text-[12px] font-semibold transition-colors">
+                <button onClick={() => { setSelectedCategory('all'); setSelectedStage('all'); }} className="text-[#8B5CF6] hover:text-[#9D6FFF] text-[12px] font-semibold transition-colors">
                   Clear filters
                 </button>
               )}
