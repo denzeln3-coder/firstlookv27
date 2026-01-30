@@ -132,7 +132,7 @@ const PitchCard = memo(function PitchCard({ pitch, index, onClick }) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
 
         <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
-          <p className="text-white text-[13px] font-semibold truncate mb-1 drop-shadow-lg">
+          <p className="text-white text-[14px] font-semibold truncate mb-1 drop-shadow-lg">
             {displayName}
           </p>
           <div className="flex items-center gap-1.5">
@@ -376,7 +376,7 @@ export default function Explore() {
                 <MessageCircle className="w-4 h-4" />
                 {unreadMessagesCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#EF4444] rounded-full flex items-center justify-center">
-                    <span className="text-white text-[9px] font-bold">{unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}</span>
+                    <span className="text-white text-[11px] font-bold">{unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}</span>
                   </div>
                 )}
               </button>
@@ -417,7 +417,7 @@ export default function Explore() {
                 </button>
               </>
             ) : (
-              <button onClick={() => navigate('/login')} className="flex items-center gap-2 px-4 py-2 bg-[#8B5CF6] text-white text-[13px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
+              <button onClick={() => navigate('/login')} className="flex items-center gap-2 px-4 py-2 bg-[#8B5CF6] text-white text-[14px] font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all duration-200">
                 <LogIn className="w-4 h-4" />
                 <span className="hidden sm:inline">Log In</span>
               </button>
@@ -552,7 +552,7 @@ export default function Explore() {
                 <Video className="w-10 h-10 text-[#8B5CF6]" />
               </div>
               <h3 className="text-white text-[20px] font-bold mb-2">No pitches yet</h3>
-              <p className="text-[#A1A1AA] text-[15px] mb-6 max-w-[280px] mx-auto">Be the first to share what you're building with the community</p>
+              <p className="text-[#A1A1AA] text-[14px] mb-6 max-w-[280px] mx-auto">Be the first to share what you're building with the community</p>
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => navigate(createPageUrl("RecordPitch"))}
