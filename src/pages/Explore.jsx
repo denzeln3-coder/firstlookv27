@@ -213,7 +213,7 @@ export default function Explore() {
       } catch { return null; }
     },
     staleTime: 0,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: true
   });
 
   const isFounder = user?.user_type === 'founder';
@@ -238,7 +238,7 @@ export default function Explore() {
     },
     staleTime: 0,
     refetchOnMount: true,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: true
   });
 
   const { data: unreadMessagesCount = 0 } = useQuery({
