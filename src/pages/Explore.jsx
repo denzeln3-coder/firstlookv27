@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import PitchModal from '../components/PitchModal';
 import NotificationBell from '../components/NotificationBell';
+import PitchSkeleton from '../components/PitchSkeleton';
 
 let InstallPrompt, OnboardingTour, FeatureTooltip, WelcomeCTA;
 try { InstallPrompt = require('../components/InstallPrompt').default; } catch { InstallPrompt = () => null; }
@@ -543,11 +544,7 @@ export default function Explore() {
         )}
 
         {pitchesLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="relative w-full bg-[#18181B] rounded-sm animate-pulse" style={{ paddingBottom: '125%' }} />
-            ))}
-          </div>
+          <PitchSkeleton />
         ) : filteredPitches.length === 0 ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="text-center px-6">
