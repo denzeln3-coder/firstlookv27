@@ -40,7 +40,7 @@ export default function BottomNav() {
       }
     },
     staleTime: 60000,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: true
   });
 
   // Get unread messages count
