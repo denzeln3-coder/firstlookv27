@@ -548,17 +548,25 @@ export default function Explore() {
         ) : filteredPitches.length === 0 ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="text-center px-6">
-              <div className="w-16 h-16 rounded-full bg-[rgba(139,92,246,0.1)] flex items-center justify-center mx-auto mb-4">
-                <Search className="w-8 h-8 text-[#8B5CF6]" />
+              <div className="w-20 h-20 rounded-full bg-[rgba(139,92,246,0.15)] flex items-center justify-center mx-auto mb-5">
+                <Video className="w-10 h-10 text-[#8B5CF6]" />
               </div>
-              <h3 className="text-white text-[17px] font-semibold mb-2">No startups found</h3>
-              <p className="text-[#71717A] text-[14px] mb-6">Try adjusting your filters</p>
-              <button 
-                onClick={() => { setSearchInput(''); setShowSearch(false); setSelectedCategory('all'); setSelectedStage('all'); setSortBy('trending'); }} 
-                className="px-6 py-2.5 bg-[#8B5CF6] text-white font-semibold rounded-xl hover:bg-[#9D6FFF] transition-all"
-              >
-                Clear all
-              </button>
+              <h3 className="text-white text-[20px] font-bold mb-2">No pitches yet</h3>
+              <p className="text-[#A1A1AA] text-[15px] mb-6 max-w-[280px] mx-auto">Be the first to share what you're building with the community</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => navigate(createPageUrl("RecordPitch"))}
+                  className="px-6 py-3 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl hover:brightness-110 transition-all"
+                >
+                  Record your pitch
+                </button>
+                <button
+                  onClick={() => { setSearchInput(""); setShowSearch(false); setSelectedCategory("all"); setSelectedStage("all"); setSortBy("trending"); }}
+                  className="px-6 py-2.5 text-[#A1A1AA] font-medium hover:text-white transition-all"
+                >
+                  Clear filters
+                </button>
+              </div>
             </div>
           </div>
         ) : (
