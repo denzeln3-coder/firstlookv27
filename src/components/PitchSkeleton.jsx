@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function PitchSkeleton({ count = 8 }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1 px-1">
       {[...Array(count)].map((_, i) => (
         <div key={i} className="relative w-full bg-[#18181B] rounded-sm overflow-hidden" style={{ paddingBottom: '125%' }}>
           <div className="absolute inset-0">

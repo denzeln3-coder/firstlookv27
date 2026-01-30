@@ -570,7 +570,7 @@ export default function Explore() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-0.5 px-0.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1 px-1">
             {filteredPitches.map((pitch, index) => (
               <PitchCard key={pitch.id} pitch={pitch} index={index} onClick={() => handlePitchClick(pitch)} />
             ))}
