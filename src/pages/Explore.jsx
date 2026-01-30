@@ -353,9 +353,9 @@ export default function Explore() {
     <div className="min-h-screen bg-[#000000] w-full">
       <div className="fixed top-0 left-0 right-0 bg-[#000000]/95 backdrop-blur-lg z-20 border-b border-[rgba(255,255,255,0.06)]">
         <div className="px-4 py-3 flex items-center justify-between">
-          <h1 className="text-[22px] font-bold">
-            <span className="text-white">First</span>
-            <span className="text-[#8B5CF6]">Look</span>
+          <h1 className="text-[22px] font-bold tracking-tight">
+            <span className="text-white">first</span>
+            <span className="text-[#8B5CF6]">lookk</span>
           </h1>
 
           <div className="flex items-center gap-2">
